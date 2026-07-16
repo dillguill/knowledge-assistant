@@ -56,9 +56,11 @@ function SidebarNav({ threads }: { threads?: ReactNode }) {
 export function AppShell({
   children,
   threads,
+  topbar,
 }: {
   children: ReactNode;
   threads?: ReactNode;
+  topbar?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -89,9 +91,11 @@ export function AppShell({
             {open ? <X className="size-4" /> : <Menu className="size-4" />}
           </button>
           <span className="text-sm font-semibold">Chat</span>
-          <span className="ml-auto rounded-full border border-border px-2.5 py-0.5 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
-            demo mode
-          </span>
+          {topbar ?? (
+            <span className="ml-auto rounded-full border border-border px-2.5 py-0.5 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
+              demo mode
+            </span>
+          )}
         </header>
         <main className="min-h-0 flex-1">{children}</main>
       </div>
