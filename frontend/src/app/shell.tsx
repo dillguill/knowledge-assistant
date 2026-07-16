@@ -3,7 +3,7 @@ import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "./nav";
 
-function SidebarNav() {
+function SidebarNav({ threads }: { threads?: ReactNode }) {
   return (
     <div className="flex h-full flex-col gap-1 p-3">
       <div className="flex items-baseline gap-2 px-2 pt-1 pb-4">
@@ -38,6 +38,14 @@ function SidebarNav() {
           );
         })}
       </nav>
+      {threads ? (
+        <div className="mt-4 flex min-h-0 flex-1 flex-col gap-2 border-t border-sidebar-border pt-3">
+          <span className="px-2 font-mono text-[10px] tracking-widest text-sidebar-foreground/50 uppercase">
+            Recent chats
+          </span>
+          <div className="min-h-0 flex-1 overflow-y-auto">{threads}</div>
+        </div>
+      ) : null}
       <div className="mt-auto border-t border-sidebar-border px-2 pt-3 text-[11px] text-sidebar-foreground/50">
         grounded chat · $0 stack
       </div>
@@ -45,7 +53,13 @@ function SidebarNav() {
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  threads,
+}: {
+  children: ReactNode;
+  threads?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
@@ -56,7 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           open ? "max-md:translate-x-0" : "max-md:-translate-x-full",
         )}
       >
-        <SidebarNav />
+        <SidebarNav threads={threads} />
       </aside>
       {open && (
         <button

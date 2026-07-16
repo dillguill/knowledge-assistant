@@ -1,12 +1,15 @@
 import { AppShell } from "@/app/shell";
+import { ThreadList } from "@/components/assistant-ui/thread-list";
+import { ChatPage } from "@/features/chat/chat-page";
+import { ChatProvider } from "@/features/chat/chat-provider";
 
 function App() {
   return (
-    <AppShell>
-      <div className="grid h-full place-items-center text-sm text-muted-foreground">
-        Chat arrives in the next commit.
-      </div>
-    </AppShell>
+    <ChatProvider>
+      <AppShell threads={<ThreadList />}>
+        <ChatPage />
+      </AppShell>
+    </ChatProvider>
   );
 }
 
