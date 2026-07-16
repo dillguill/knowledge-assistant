@@ -1,0 +1,31 @@
+name: Deploy backend to HF Space
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/deploy-space.yml"]
+  workflow_dispatch:
+concurrency:
+  group: space-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Push backend to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git clone "https://dillguill:${HF_TOKEN}@huggingface.co/spaces/dillguill/knowledge-assistant" space
+          find space -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          rsync -a backend/ space/ \
+            --exclude tests --exclude .venv --exclude __pycache__ \
+            --exclude uv.lock --exclude conftest.py --exclude README.space.md
+          cp backend/README.space.md space/README.md
+          cd space
+          git config user.name "deploy-bot"
+          git config user.email "deploy@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "No changes to deploy" && exit 0
+          git commit -m "Deploy from ${GITHUB_SHA::7}"
+          git push
