@@ -1,0 +1,68 @@
+import { createApiAdapter } from "./api-adapter";
+
+function sseResponse(events: string[]): Response {
+  const body = events.map((e) => `data: ${e}\n\n`).join("");
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
+function run(adapter: ReturnType<typeof createApiAdapter>) {
+  return adapter.run({
+    messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+    abortSignal: new AbortController().signal,
+  } as never) as AsyncIterable<{
+    content: readonly { type: string; text?: string }[];
+  }>;
+}
+
+test("accumulates text deltas from the SSE stream", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([
+      JSON.stringify({ type: "text-delta", text: "Hel" }),
+      JSON.stringify({ type: "text-delta", text: "lo!" }),
+      "[DONE]",
+    ]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter("https://api.test", () => "some/model:free");
+
+  let finalText = "";
+  for await (const chunk of run(adapter)) {
+    const part = chunk.content[0];
+    if (part?.type === "text" && part.text) finalText = part.text;
+  }
+  expect(finalText).toBe("Hello!");
+  expect(fetchMock).toHaveBeenCalledWith(
+    "https://api.test/api/chat",
+    expect.objectContaining({ method: "POST" }),
+  );
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.model).toBe("some/model:free");
+  expect(body.messages).toEqual([{ role: "user", content: "hi" }]);
+  vi.unstubAllGlobals();
+});
+
+test("throws a readable error on an error event", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      sseResponse([
+        JSON.stringify({
+          type: "error",
+          code: "rate_limited",
+          message: "Free-tier rate limit hit — wait a moment and retry.",
+        }),
+        "[DONE]",
+      ]),
+    ),
+  );
+  const adapter = createApiAdapter("https://api.test", () => null);
+  await expect(async () => {
+    for await (const _ of run(adapter)) {
+      // drain
+    }
+  }).rejects.toThrow(/rate limit/i);
+  vi.unstubAllGlobals();
+});
