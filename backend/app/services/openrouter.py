@@ -1,5 +1,6 @@
+import json
 import time
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 
@@ -11,6 +12,53 @@ _model_cache: tuple[float, list[dict[str, Any]]] | None = None
 
 class UpstreamError(Exception):
     pass
+
+
+class RateLimitedError(UpstreamError):
+    pass
+
+
+async def stream_chat(
+    model: str | None, messages: list[dict[str, str]]
+) -> "AsyncIterator[str]":
+    """Proxy an OpenRouter streaming completion, yielding text deltas."""
+    settings = get_settings()
+    payload = {
+        "model": model or settings.default_model,
+        "messages": messages,
+        "stream": True,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.openrouter_api_key}",
+        "HTTP-Referer": "https://dillguill.github.io/knowledge-assistant/",
+        "X-Title": "Knowledge Assistant",
+    }
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
+        async with client.stream(
+            "POST",
+            f"{settings.openrouter_base_url}/chat/completions",
+            json=payload,
+            headers=headers,
+        ) as resp:
+            if resp.status_code == 429:
+                raise RateLimitedError("rate limited")
+            if resp.status_code >= 400:
+                raise UpstreamError(f"upstream status {resp.status_code}")
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[len("data: ") :]
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                delta = (
+                    chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+                )
+                if delta:
+                    yield delta
 
 
 def clear_model_cache() -> None:
