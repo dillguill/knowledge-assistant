@@ -38,4 +38,7 @@ async def status_page() -> str:
 
 
 if __name__ == "__main__":
-    app.launch()
+    # ssr_mode=False: gradio 6 defaults to server-side rendering behind a Node.js
+    # proxy, which fails to stay up on the Space ("Stopping Node.js server").
+    # Serve Python directly on 7860 instead — we only need the API + status page.
+    app.launch(ssr_mode=False)
