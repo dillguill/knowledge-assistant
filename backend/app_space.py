@@ -1,40 +1,41 @@
 """Hugging Face Space entrypoint.
 
-The free Space tier only offers the Gradio SDK, so the FastAPI app is served
-by mounting a minimal Gradio status page onto it and running uvicorn on the
-port the Space expects (7860).
+The free Space tier serves the Gradio SDK, which launches the app itself on port
+7860 (and, on ZeroGPU, alongside the injected ``spaces`` runtime). A plain
+FastAPI app + our own ``uvicorn.run`` double-binds that port, so instead we build
+on ``gradio.Server`` — a FastAPI subclass with Gradio's launch engine baked in.
+It serves our API routes and a status page, and ``app.launch()`` is the
+Gradio-native launch the Space expects.
 """
 
-import gradio as gr
+from fastapi.responses import HTMLResponse
+from gradio import Server
 
-from app.main import create_app
+from app.main import configure
 
 FRONTEND_URL = "https://dillguill.github.io/knowledge-assistant/"
 
-app = create_app()
+app = Server()
+configure(app)
 
-with gr.Blocks(title="Knowledge Assistant API") as status_page:
-    gr.Markdown(
-        f"""
-# Knowledge Assistant API
 
-This Space hosts the backend for **[Knowledge Assistant]({FRONTEND_URL})** —
-open the frontend to chat.
+@app.get("/", response_class=HTMLResponse)
+async def status_page() -> str:
+    return f"""<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Knowledge Assistant API</title></head>
+<body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem;">
+  <h1>Knowledge Assistant API</h1>
+  <p>Backend for <strong><a href="{FRONTEND_URL}">Knowledge Assistant</a></strong> —
+     open the frontend to chat.</p>
+  <ul>
+    <li>Frontend: <a href="{FRONTEND_URL}">{FRONTEND_URL}</a></li>
+    <li>Health: <a href="/api/health">/api/health</a></li>
+    <li>Models: <a href="/api/models">/api/models</a></li>
+  </ul>
+</body>
+</html>"""
 
-- Frontend: [{FRONTEND_URL}]({FRONTEND_URL})
-- Health: [/api/health](/api/health)
-- Models: [/api/models](/api/models)
-"""
-    )
-
-app = gr.mount_gradio_app(app, status_page, path="/")
 
 if __name__ == "__main__":
-    # On the Space, HF's Gradio SDK runtime serves `app` on 7860 itself; running
-    # our own uvicorn there double-binds the port. Only self-serve for local dev.
-    import os
-
-    if not os.environ.get("SPACE_ID"):
-        import uvicorn
-
-        uvicorn.run(app, host="0.0.0.0", port=7860)
+    app.launch()
