@@ -8,6 +8,7 @@ import {
   useRemoteThreadListRuntime,
 } from "@assistant-ui/react";
 import { createLocalStorageAdapter } from "@assistant-ui/core/react";
+import { loadSettings } from "@/features/settings/settings-storage";
 import { createApiAdapter } from "./api-adapter";
 import { demoAdapter } from "./demo-adapter";
 import { browserThreadStorage, STORAGE_PREFIX } from "./thread-storage";
@@ -55,7 +56,11 @@ function useChatThreadRuntime() {
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const status = useBackendStatus(API_URL);
-  const [model, setModelState] = useState<string | null>(null);
+  const [model, setModelState] = useState<string | null>(() => {
+    const stored = loadSettings().defaultModel;
+    modelRef.current = stored;
+    return stored;
+  });
   const setModel = (id: string | null) => {
     modelRef.current = id;
     setModelState(id);
