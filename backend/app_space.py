@@ -8,6 +8,8 @@ It serves our API routes and a status page, and ``app.launch()`` is the
 Gradio-native launch the Space expects.
 """
 
+import os
+
 from fastapi.responses import HTMLResponse
 from gradio import Server
 
@@ -37,8 +39,10 @@ async def status_page() -> str:
 </html>"""
 
 
-if __name__ == "__main__":
-    # ssr_mode=False: gradio 6 defaults to server-side rendering behind a Node.js
-    # proxy, which fails to stay up on the Space ("Stopping Node.js server").
-    # Serve Python directly on 7860 instead — we only need the API + status page.
-    app.launch(ssr_mode=False)
+# The Space imports this module in Gradio reload mode (so __name__ != "__main__"),
+# which is why launch() must run at module level — matching the canonical
+# gradio.Server Space example (ysharma/text-behind-image). Gate on SPACE_ID so
+# importing the module in tests/local tooling doesn't start a server. ssr_mode=False
+# skips gradio 6's Node.js SSR proxy, which fails to stay up on the Space.
+if os.environ.get("SPACE_ID") or __name__ == "__main__":
+    app.launch(show_error=True, ssr_mode=False)
