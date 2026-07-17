@@ -21,6 +21,14 @@ app = Server()
 configure(app)
 
 
+@app.api(name="ping")
+def ping() -> str:
+    # gradio.Server is "FastAPI + Gradio's API engine", and the Space launches and
+    # health-checks the Gradio engine — which must be non-empty. Our real routes are
+    # plain FastAPI (see app.main.configure); this one endpoint keeps the engine alive.
+    return "ok"
+
+
 @app.get("/", response_class=HTMLResponse)
 async def status_page() -> str:
     return f"""<!doctype html>
@@ -42,7 +50,6 @@ async def status_page() -> str:
 # The Space imports this module in Gradio reload mode (so __name__ != "__main__"),
 # which is why launch() must run at module level — matching the canonical
 # gradio.Server Space example (ysharma/text-behind-image). Gate on SPACE_ID so
-# importing the module in tests/local tooling doesn't start a server. ssr_mode=False
-# skips gradio 6's Node.js SSR proxy, which fails to stay up on the Space.
+# importing the module in tests/local tooling doesn't start a server.
 if os.environ.get("SPACE_ID") or __name__ == "__main__":
-    app.launch(show_error=True, ssr_mode=False)
+    app.launch(show_error=True)
