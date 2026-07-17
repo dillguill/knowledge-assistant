@@ -30,6 +30,11 @@ open the frontend to chat.
 app = gr.mount_gradio_app(app, status_page, path="/")
 
 if __name__ == "__main__":
-    import uvicorn
+    # On the Space, HF's Gradio SDK runtime serves `app` on 7860 itself; running
+    # our own uvicorn there double-binds the port. Only self-serve for local dev.
+    import os
 
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    if not os.environ.get("SPACE_ID"):
+        import uvicorn
+
+        uvicorn.run(app, host="0.0.0.0", port=7860)
