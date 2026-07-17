@@ -11,8 +11,8 @@ test("sidebar shows the product name and all nav sections", () => {
   const nav = within(screen.getByRole("navigation", { name: "Sections" }));
   for (const label of [
     "Chat",
+    "Wiki",
     "Documents",
-    "Knowledge bases",
     "Analytics",
     "Skills",
     "Settings",
