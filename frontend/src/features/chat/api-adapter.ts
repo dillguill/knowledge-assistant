@@ -2,7 +2,34 @@ import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
 
 type SseEvent =
   | { type: "text-delta"; text: string }
-  | { type: "error"; code: string; message: string };
+  | { type: "error"; code: string; message: string; retry_after?: number };
+
+export class ChatError extends Error {
+  code: string;
+  retryAfter?: number;
+  constructor(code: string, message: string, retryAfter?: number) {
+    super(message);
+    this.name = "ChatError";
+    this.code = code;
+    this.retryAfter = retryAfter;
+  }
+}
+
+function errorCopy(
+  event: Extract<SseEvent, { type: "error" }>,
+  model: string | null,
+): string {
+  switch (event.code) {
+    case "rate_limited":
+      return event.retry_after
+        ? `Rate limited — try again in ~${event.retry_after}s.`
+        : "Rate limited — wait a moment, then regenerate.";
+    case "model_gone":
+      return `${model ?? "The selected model"} is no longer available — pick another model and regenerate.`;
+    default:
+      return "The model provider had a problem. Regenerate to retry.";
+  }
+}
 
 function toApiMessages(messages: readonly ThreadMessage[]) {
   return messages.map((m) => ({
@@ -64,7 +91,13 @@ export function createApiAdapter(
       }
       let text = "";
       for await (const event of parseSse(response.body)) {
-        if (event.type === "error") throw new Error(event.message);
+        if (event.type === "error") {
+          throw new ChatError(
+            event.code,
+            errorCopy(event, getModel()),
+            event.retry_after,
+          );
+        }
         if (event.type === "text-delta") {
           text += event.text;
           yield { content: [{ type: "text" as const, text }] };

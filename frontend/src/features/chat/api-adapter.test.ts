@@ -82,6 +82,73 @@ test("sends no system message when context.system is absent", async () => {
   vi.unstubAllGlobals();
 });
 
+test("rate_limited with retry_after produces countdown copy", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      sseResponse([
+        JSON.stringify({
+          type: "error",
+          code: "rate_limited",
+          message: "upstream words",
+          retry_after: 52,
+        }),
+      ]),
+    ),
+  );
+  const adapter = createApiAdapter("https://api.test", () => "m1");
+  await expect(drain(run(adapter))).rejects.toMatchObject({
+    name: "ChatError",
+    code: "rate_limited",
+    retryAfter: 52,
+    message: "Rate limited — try again in ~52s.",
+  });
+  vi.unstubAllGlobals();
+});
+
+test("model_gone names the selected model and points at the selector", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      sseResponse([
+        JSON.stringify({
+          type: "error",
+          code: "model_gone",
+          message: "upstream words",
+        }),
+      ]),
+    ),
+  );
+  const adapter = createApiAdapter("https://api.test", () => "old/model:free");
+  await expect(drain(run(adapter))).rejects.toMatchObject({
+    code: "model_gone",
+    message:
+      "old/model:free is no longer available — pick another model and regenerate.",
+  });
+  vi.unstubAllGlobals();
+});
+
+test("unknown error codes get generic retry copy", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      sseResponse([
+        JSON.stringify({
+          type: "error",
+          code: "upstream_error",
+          message: "upstream words",
+        }),
+      ]),
+    ),
+  );
+  const adapter = createApiAdapter("https://api.test", () => null);
+  await expect(drain(run(adapter))).rejects.toMatchObject({
+    code: "upstream_error",
+    message: "The model provider had a problem. Regenerate to retry.",
+  });
+  vi.unstubAllGlobals();
+});
+
 test("throws a readable error on an error event", async () => {
   vi.stubGlobal(
     "fetch",
