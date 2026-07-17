@@ -1,11 +1,10 @@
 """Hugging Face Space entrypoint.
 
-The free Space tier serves the Gradio SDK, which launches the app itself on port
-7860 (and, on ZeroGPU, alongside the injected ``spaces`` runtime). A plain
-FastAPI app + our own ``uvicorn.run`` double-binds that port, so instead we build
-on ``gradio.Server`` — a FastAPI subclass with Gradio's launch engine baked in.
-It serves our API routes and a status page, and ``app.launch()`` is the
-Gradio-native launch the Space expects.
+The free Space tier serves the Gradio SDK on ZeroGPU hardware. We build on
+``gradio.Server`` — a FastAPI subclass with Gradio's launch engine baked in — so
+our FastAPI routes and a status page are served, and ``app.launch()`` is the
+Gradio-native launch the Space expects. ZeroGPU additionally refuses to start
+unless the app defines at least one ``@spaces.GPU`` function (see below).
 """
 
 import os
@@ -20,13 +19,19 @@ FRONTEND_URL = "https://dillguill.github.io/knowledge-assistant/"
 app = Server()
 configure(app)
 
+# ZeroGPU Spaces fail at startup with "No @spaces.GPU function detected" unless
+# the app defines at least one @spaces.GPU function. This backend does no GPU
+# work, so this never-called stub exists only to satisfy that requirement.
+# `spaces` is force-installed by HF on the Space but is absent locally / in tests.
+try:
+    import spaces
 
-@app.api(name="ping")
-def ping() -> str:
-    # gradio.Server is "FastAPI + Gradio's API engine", and the Space launches and
-    # health-checks the Gradio engine — which must be non-empty. Our real routes are
-    # plain FastAPI (see app.main.configure); this one endpoint keeps the engine alive.
-    return "ok"
+    @spaces.GPU
+    def _zerogpu_startup_probe() -> None:
+        return None
+
+except ImportError:
+    pass
 
 
 @app.get("/", response_class=HTMLResponse)
