@@ -1,20 +1,16 @@
-import {
-  createContext,
-  useContext,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import {
   AssistantRuntimeProvider,
   CompositeAttachmentAdapter,
   SimpleImageAttachmentAdapter,
   SimpleTextAttachmentAdapter,
   useLocalRuntime,
+  useRemoteThreadListRuntime,
 } from "@assistant-ui/react";
+import { createLocalStorageAdapter } from "@assistant-ui/core/react";
 import { createApiAdapter } from "./api-adapter";
 import { demoAdapter } from "./demo-adapter";
+import { browserThreadStorage, STORAGE_PREFIX } from "./thread-storage";
 import { useBackendStatus, type BackendStatus } from "./use-backend-status";
 
 /** Backend base URL; unset (local dev without a backend) falls back to demo mode. */
@@ -37,25 +33,37 @@ export function useBackend() {
   return useContext(StatusContext);
 }
 
+const modelRef = { current: null as string | null };
+
+const chatAdapter = API_URL
+  ? createApiAdapter(API_URL, () => modelRef.current)
+  : demoAdapter;
+
+const attachments = new CompositeAttachmentAdapter([
+  new SimpleImageAttachmentAdapter(),
+  new SimpleTextAttachmentAdapter(),
+]);
+
+const threadListAdapter = createLocalStorageAdapter({
+  storage: browserThreadStorage,
+  prefix: STORAGE_PREFIX,
+});
+
+function useChatThreadRuntime() {
+  return useLocalRuntime(chatAdapter, { adapters: { attachments } });
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const status = useBackendStatus(API_URL);
-  const [model, setModel] = useState<string | null>(null);
-  const modelRef = useRef<string | null>(null);
-  modelRef.current = model;
+  const [model, setModelState] = useState<string | null>(null);
+  const setModel = (id: string | null) => {
+    modelRef.current = id;
+    setModelState(id);
+  };
 
-  const adapter = useMemo(
-    () =>
-      API_URL ? createApiAdapter(API_URL, () => modelRef.current) : demoAdapter,
-    [],
-  );
-
-  const runtime = useLocalRuntime(adapter, {
-    adapters: {
-      attachments: new CompositeAttachmentAdapter([
-        new SimpleImageAttachmentAdapter(),
-        new SimpleTextAttachmentAdapter(),
-      ]),
-    },
+  const runtime = useRemoteThreadListRuntime({
+    runtimeHook: useChatThreadRuntime,
+    adapter: threadListAdapter,
   });
 
   return (
