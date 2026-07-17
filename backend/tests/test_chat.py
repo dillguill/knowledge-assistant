@@ -65,6 +65,49 @@ async def test_chat_maps_429_to_rate_limited_event():
     assert events[-1] == "[DONE]"
 
 
+@respx.mock
+async def test_rate_limited_passes_retry_after_through():
+    respx.post(UPSTREAM).respond(
+        status_code=429, headers={"Retry-After": "52"}, json={"error": "slow down"}
+    )
+    async with client() as c:
+        resp = await c.post(
+            "/api/chat", json={"messages": [{"role": "user", "content": "hi"}]}
+        )
+    err = json.loads(parse_events(resp.text)[0])
+    assert err["code"] == "rate_limited"
+    assert err["retry_after"] == 52
+
+
+@respx.mock
+async def test_rate_limited_omits_retry_after_when_absent():
+    respx.post(UPSTREAM).respond(status_code=429, json={"error": "slow down"})
+    async with client() as c:
+        resp = await c.post(
+            "/api/chat", json={"messages": [{"role": "user", "content": "hi"}]}
+        )
+    err = json.loads(parse_events(resp.text)[0])
+    assert err["code"] == "rate_limited"
+    assert "retry_after" not in err
+
+
+@respx.mock
+async def test_404_maps_to_model_gone():
+    respx.post(UPSTREAM).respond(status_code=404, json={"error": "no such model"})
+    async with client() as c:
+        resp = await c.post(
+            "/api/chat",
+            json={"model": "gone/model:free",
+                  "messages": [{"role": "user", "content": "hi"}]},
+        )
+    events = parse_events(resp.text)
+    err = json.loads(events[0])
+    assert err["type"] == "error"
+    assert err["code"] == "model_gone"
+    assert "gone/model:free" in err["message"]
+    assert events[-1] == "[DONE]"
+
+
 async def test_chat_rejects_empty_messages():
     async with client() as c:
         resp = await c.post("/api/chat", json={"messages": []})

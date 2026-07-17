@@ -15,7 +15,15 @@ class UpstreamError(Exception):
 
 
 class RateLimitedError(UpstreamError):
-    pass
+    def __init__(self, retry_after: int | None = None):
+        super().__init__("rate limited")
+        self.retry_after = retry_after
+
+
+class ModelGoneError(UpstreamError):
+    def __init__(self, model: str):
+        super().__init__(f"model unavailable: {model}")
+        self.model = model
 
 
 async def stream_chat(
@@ -41,7 +49,10 @@ async def stream_chat(
             headers=headers,
         ) as resp:
             if resp.status_code == 429:
-                raise RateLimitedError("rate limited")
+                header = resp.headers.get("Retry-After", "")
+                raise RateLimitedError(int(header) if header.isdigit() else None)
+            if resp.status_code == 404:
+                raise ModelGoneError(payload["model"])
             if resp.status_code >= 400:
                 raise UpstreamError(f"upstream status {resp.status_code}")
             async for line in resp.aiter_lines():
