@@ -48,14 +48,15 @@ export function createApiAdapter(
   getModel: () => string | null,
 ): ChatModelAdapter {
   return {
-    async *run({ messages, abortSignal }) {
+    async *run({ messages, abortSignal, context }) {
+      const apiMessages = toApiMessages(messages);
+      if (context?.system) {
+        apiMessages.unshift({ role: "system", content: context.system });
+      }
       const response = await fetch(`${baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: getModel(),
-          messages: toApiMessages(messages),
-        }),
+        body: JSON.stringify({ model: getModel(), messages: apiMessages }),
         signal: abortSignal,
       });
       if (!response.ok || !response.body) {

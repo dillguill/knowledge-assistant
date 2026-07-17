@@ -11,6 +11,7 @@ import { createLocalStorageAdapter } from "@assistant-ui/core/react";
 import { loadSettings } from "@/features/settings/settings-storage";
 import { createApiAdapter } from "./api-adapter";
 import { demoAdapter } from "./demo-adapter";
+import { GlobalInstructions } from "./global-instructions";
 import { browserThreadStorage, STORAGE_PREFIX } from "./thread-storage";
 import { useBackendStatus, type BackendStatus } from "./use-backend-status";
 
@@ -73,6 +74,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <GlobalInstructions />
       <StatusContext.Provider value={status}>
         <ModelContext.Provider value={{ model, setModel }}>
           {children}

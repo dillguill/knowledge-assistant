@@ -8,13 +8,23 @@ function sseResponse(events: string[]): Response {
   });
 }
 
-function run(adapter: ReturnType<typeof createApiAdapter>) {
+function run(
+  adapter: ReturnType<typeof createApiAdapter>,
+  context: object = {},
+) {
   return adapter.run({
     messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
     abortSignal: new AbortController().signal,
+    context,
   } as never) as AsyncIterable<{
     content: readonly { type: string; text?: string }[];
   }>;
+}
+
+async function drain(iter: AsyncIterable<unknown>) {
+  for await (const _ of iter) {
+    // drain
+  }
 }
 
 test("accumulates text deltas from the SSE stream", async () => {
@@ -41,6 +51,34 @@ test("accumulates text deltas from the SSE stream", async () => {
   const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
   expect(body.model).toBe("some/model:free");
   expect(body.messages).toEqual([{ role: "user", content: "hi" }]);
+  vi.unstubAllGlobals();
+});
+
+test("prepends context.system as a system message", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter("https://api.test", () => "m1");
+  await drain(run(adapter, { system: "Cite sources." }));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.messages[0]).toEqual({
+    role: "system",
+    content: "Cite sources.",
+  });
+  expect(body.messages[1].role).toBe("user");
+  vi.unstubAllGlobals();
+});
+
+test("sends no system message when context.system is absent", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter("https://api.test", () => "m1");
+  await drain(run(adapter, {}));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.messages[0].role).toBe("user");
   vi.unstubAllGlobals();
 });
 
