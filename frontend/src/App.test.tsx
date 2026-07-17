@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import App from "./App";
 
 test("renders the app without crashing", () => {
@@ -9,4 +10,22 @@ test("renders the app without crashing", () => {
 test("sidebar offers a New Chat button", () => {
   render(<App />);
   expect(screen.getByRole("button", { name: /new chat/i })).toBeInTheDocument();
+});
+
+test("model selector lives in the composer, not the topbar", () => {
+  render(<App />);
+  const header = screen.getByRole("banner");
+  expect(within(header).queryByLabelText("Model")).not.toBeInTheDocument();
+  expect(
+    within(header).getByRole("button", { name: /toggle light\/dark theme/i }),
+  ).toBeInTheDocument();
+});
+
+test("nav switches to Settings and back to Chat", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  expect(screen.getByLabelText("System prompt")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Chat" }));
+  expect(screen.queryByLabelText("System prompt")).not.toBeInTheDocument();
 });

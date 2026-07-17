@@ -23,5 +23,5 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "documents", label: "Documents", icon: FileText, planned: true },
   { id: "analytics", label: "Analytics", icon: BarChart3, planned: true },
   { id: "skills", label: "Skills", icon: Sparkles, planned: true },
-  { id: "settings", label: "Settings", icon: Settings, planned: true },
+  { id: "settings", label: "Settings", icon: Settings, planned: false },
 ];

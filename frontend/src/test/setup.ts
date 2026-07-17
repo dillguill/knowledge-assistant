@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 
 // jsdom lacks these; assistant-ui and Radix components touch them.
 window.HTMLElement.prototype.scrollIntoView ??= () => {};
+window.HTMLElement.prototype.scrollTo ??= () => {};
 globalThis.ResizeObserver ??= class {
   observe() {}
   unobserve() {}

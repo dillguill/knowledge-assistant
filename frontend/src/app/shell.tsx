@@ -9,10 +9,14 @@ function SidebarNav({
   threads,
   collapsed,
   onToggleCollapse,
+  active,
+  onNavigate,
 }: {
   threads?: ReactNode;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  active: string;
+  onNavigate: (id: string) => void;
 }) {
   return (
     <div className="flex h-full flex-col gap-1 p-3">
@@ -75,19 +79,22 @@ function SidebarNav({
               )}
             </span>
           ) : (
-            <a
+            <button
               key={item.id}
-              href="#"
-              aria-current="page"
+              onClick={() => onNavigate(item.id)}
+              aria-current={item.id === active ? "page" : undefined}
               title={collapsed ? item.label : undefined}
               className={cn(
-                "flex items-center gap-2.5 rounded-md bg-sidebar-accent px-2.5 py-2 text-sm font-medium text-sidebar-accent-foreground shadow-[inset_2px_0_0] shadow-sidebar-primary",
+                "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm",
+                item.id === active
+                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground shadow-[inset_2px_0_0] shadow-sidebar-primary"
+                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 collapsed && "justify-center px-0",
               )}
             >
               <Icon className="size-4 shrink-0" aria-hidden />
               {!collapsed && item.label}
-            </a>
+            </button>
           );
         })}
       </nav>
@@ -112,10 +119,16 @@ export function AppShell({
   children,
   threads,
   topbar,
+  title,
+  active,
+  onNavigate,
 }: {
   children: ReactNode;
   threads?: ReactNode;
   topbar?: ReactNode;
+  title: string;
+  active: string;
+  onNavigate: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(
@@ -142,6 +155,11 @@ export function AppShell({
           threads={threads}
           collapsed={collapsed}
           onToggleCollapse={toggleCollapse}
+          active={active}
+          onNavigate={(id) => {
+            onNavigate(id);
+            setOpen(false);
+          }}
         />
       </aside>
       {open && (
@@ -160,7 +178,7 @@ export function AppShell({
           >
             {open ? <X className="size-4" /> : <Menu className="size-4" />}
           </button>
-          <span className="text-sm font-semibold">Chat</span>
+          <span className="text-sm font-semibold">{title}</span>
           {topbar ?? (
             <span className="ml-auto rounded-full border border-border px-2.5 py-0.5 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
               demo mode

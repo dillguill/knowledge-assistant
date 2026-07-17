@@ -31,12 +31,21 @@ async def _sse(request: ChatRequest) -> AsyncIterator[str]:
             messages=[m.model_dump() for m in request.messages],
         ):
             yield _event({"type": "text-delta", "text": delta})
-    except openrouter.RateLimitedError:
+    except openrouter.RateLimitedError as exc:
+        event: dict = {
+            "type": "error",
+            "code": "rate_limited",
+            "message": "Free-tier rate limit hit — wait a moment and retry.",
+        }
+        if exc.retry_after is not None:
+            event["retry_after"] = exc.retry_after
+        yield _event(event)
+    except openrouter.ModelGoneError as exc:
         yield _event(
             {
                 "type": "error",
-                "code": "rate_limited",
-                "message": "Free-tier rate limit hit — wait a moment and retry.",
+                "code": "model_gone",
+                "message": f"The model {exc.model} is no longer available.",
             }
         )
     except openrouter.UpstreamError:

@@ -1,13 +1,18 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { vi } from "vitest";
 import { AppShell } from "./shell";
 
-test("sidebar shows the product name and all nav sections", () => {
-  render(
-    <AppShell>
-      <div>content</div>
+function renderShell(children: React.ReactNode = <div>content</div>) {
+  return render(
+    <AppShell title="Chat" active="chat" onNavigate={vi.fn()}>
+      {children}
     </AppShell>,
   );
+}
+
+test("sidebar shows the product name and all nav sections", () => {
+  renderShell();
   expect(screen.getByText("Knowledge Assistant")).toBeInTheDocument();
   const nav = within(screen.getByRole("navigation", { name: "Sections" }));
   for (const label of [
@@ -22,32 +27,32 @@ test("sidebar shows the product name and all nav sections", () => {
   }
 });
 
-test("only Chat is active; the rest are marked planned", () => {
-  render(
-    <AppShell>
-      <div />
-    </AppShell>,
-  );
-  expect(screen.getAllByText("planned")).toHaveLength(5);
+test("Chat and Settings are real destinations; the rest are marked planned", () => {
+  renderShell(<div />);
+  expect(screen.getAllByText("planned")).toHaveLength(4);
 });
 
 test("renders its children in the main area", () => {
+  renderShell(<div>chat goes here</div>);
+  expect(screen.getByText("chat goes here")).toBeInTheDocument();
+});
+
+test("clicking a non-planned nav item calls onNavigate", async () => {
+  const user = userEvent.setup();
+  const onNavigate = vi.fn();
   render(
-    <AppShell>
-      <div>chat goes here</div>
+    <AppShell title="Chat" active="chat" onNavigate={onNavigate}>
+      <div />
     </AppShell>,
   );
-  expect(screen.getByText("chat goes here")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  expect(onNavigate).toHaveBeenCalledWith("settings");
 });
 
 test("desktop collapse toggle hides nav labels and persists the choice", async () => {
   const user = userEvent.setup();
   localStorage.removeItem("knowledge-assistant:sidebar-collapsed");
-  const { unmount } = render(
-    <AppShell>
-      <div />
-    </AppShell>,
-  );
+  const { unmount } = renderShell(<div />);
   const toggle = screen.getByRole("button", { name: /collapse sidebar/i });
   await user.click(toggle);
   expect(
@@ -58,11 +63,7 @@ test("desktop collapse toggle hides nav labels and persists the choice", async (
   );
   unmount();
 
-  render(
-    <AppShell>
-      <div />
-    </AppShell>,
-  );
+  renderShell(<div />);
   expect(
     screen.getByRole("navigation", { name: "Sections" }),
   ).toHaveAttribute("data-collapsed", "true");
