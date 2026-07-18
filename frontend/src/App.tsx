@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AppShell } from "@/app/shell";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatPage } from "@/features/chat/chat-page";
 import { ChatProvider } from "@/features/chat/chat-provider";
 import { TopbarStatus } from "@/features/chat/topbar-status";
@@ -19,25 +20,29 @@ function App() {
   const [view, setView] = useState<View>("chat");
   return (
     <SettingsProvider>
-      <ChatProvider>
-        <AppShell
-          threads={<ThreadList />}
-          topbar={<TopbarStatus />}
-          title={TITLES[view]}
-          active={view}
-          onNavigate={(id) => {
-            if (id === "chat" || id === "settings" || id === "documents")
-              setView(id);
-          }}
-        >
-          {/* chat stays mounted so runtime and thread state survive view switches */}
-          <div className="h-full" hidden={view !== "chat"}>
-            <ChatPage />
-          </div>
-          {view === "settings" && <SettingsPage />}
-          {view === "documents" && <DocumentsPage />}
-        </AppShell>
-      </ChatProvider>
+      {/* assistant-ui's attachment tiles render a raw Radix Tooltip, so the app
+          must mount a TooltipProvider at the root. */}
+      <TooltipProvider>
+        <ChatProvider>
+          <AppShell
+            threads={<ThreadList />}
+            topbar={<TopbarStatus />}
+            title={TITLES[view]}
+            active={view}
+            onNavigate={(id) => {
+              if (id === "chat" || id === "settings" || id === "documents")
+                setView(id);
+            }}
+          >
+            {/* chat stays mounted so runtime and thread state survive view switches */}
+            <div className="h-full" hidden={view !== "chat"}>
+              <ChatPage />
+            </div>
+            {view === "settings" && <SettingsPage />}
+            {view === "documents" && <DocumentsPage />}
+          </AppShell>
+        </ChatProvider>
+      </TooltipProvider>
     </SettingsProvider>
   );
 }
