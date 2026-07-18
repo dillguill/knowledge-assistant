@@ -149,6 +149,22 @@ test("unknown error codes get generic retry copy", async () => {
   vi.unstubAllGlobals();
 });
 
+test("includes collection ids in the request body when selected", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter("https://api.test", () => null, () => ({
+    collectionIds: [1, 2],
+    attachmentIds: [],
+  }));
+  await drain(run(adapter));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.collection_ids).toEqual([1, 2]);
+  expect(body.attachment_ids).toBeUndefined();
+  vi.unstubAllGlobals();
+});
+
 test("throws a readable error on an error event", async () => {
   vi.stubGlobal(
     "fetch",

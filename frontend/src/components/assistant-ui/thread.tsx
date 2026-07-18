@@ -23,6 +23,7 @@ import {
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import { ComposerModelSelect } from "@/features/chat/composer-model-select";
+import { SourceSelector } from "@/features/chat/source-selector";
 import { cn } from "@/lib/utils";
 import {
   ActionBarMorePrimitive,
@@ -256,6 +257,7 @@ const ComposerAction: FC = () => {
       <div className="flex items-center gap-2">
         <ComposerAddAttachment />
         <ComposerModelSelect />
+        <SourceSelector />
       </div>
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>

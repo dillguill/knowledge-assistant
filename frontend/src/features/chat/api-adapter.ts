@@ -69,10 +69,18 @@ async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<SseEv
   }
 }
 
+export type SourceConfig = { collectionIds: number[]; attachmentIds: number[] };
+
+const NO_SOURCES: () => SourceConfig = () => ({
+  collectionIds: [],
+  attachmentIds: [],
+});
+
 /** Streams chat completions from the Knowledge Assistant backend. */
 export function createApiAdapter(
   baseUrl: string,
   getModel: () => string | null,
+  getSourceConfig: () => SourceConfig = NO_SOURCES,
 ): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal, context }) {
@@ -80,10 +88,17 @@ export function createApiAdapter(
       if (context?.system) {
         apiMessages.unshift({ role: "system", content: context.system });
       }
+      const source = getSourceConfig();
+      const body: Record<string, unknown> = {
+        model: getModel(),
+        messages: apiMessages,
+      };
+      if (source.collectionIds.length) body.collection_ids = source.collectionIds;
+      if (source.attachmentIds.length) body.attachment_ids = source.attachmentIds;
       const response = await fetch(`${baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: getModel(), messages: apiMessages }),
+        body: JSON.stringify(body),
         signal: abortSignal,
       });
       if (!response.ok || !response.body) {
