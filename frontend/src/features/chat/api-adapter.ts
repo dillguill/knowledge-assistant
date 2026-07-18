@@ -89,12 +89,19 @@ export function createApiAdapter(
         apiMessages.unshift({ role: "system", content: context.system });
       }
       const source = getSourceConfig();
+      const attachmentIds = [
+        ...messages
+          .flatMap((m) => m.attachments ?? [])
+          .map((a) => Number(a.id))
+          .filter(Number.isFinite),
+        ...source.attachmentIds,
+      ];
       const body: Record<string, unknown> = {
         model: getModel(),
         messages: apiMessages,
       };
       if (source.collectionIds.length) body.collection_ids = source.collectionIds;
-      if (source.attachmentIds.length) body.attachment_ids = source.attachmentIds;
+      if (attachmentIds.length) body.attachment_ids = attachmentIds;
       const response = await fetch(`${baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

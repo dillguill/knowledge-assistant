@@ -10,6 +10,7 @@ import {
 import { createLocalStorageAdapter } from "@assistant-ui/core/react";
 import { loadSettings } from "@/features/settings/settings-storage";
 import { createApiAdapter } from "./api-adapter";
+import { BackendAttachmentAdapter } from "./backend-attachment-adapter";
 import { demoAdapter } from "./demo-adapter";
 import { GlobalInstructions } from "./global-instructions";
 import { SourceSelectionProvider, sourceRef } from "./source-selection";
@@ -45,10 +46,12 @@ const chatAdapter = API_URL
     }))
   : demoAdapter;
 
-const attachments = new CompositeAttachmentAdapter([
-  new SimpleImageAttachmentAdapter(),
-  new SimpleTextAttachmentAdapter(),
-]);
+const attachments = API_URL
+  ? new BackendAttachmentAdapter()
+  : new CompositeAttachmentAdapter([
+      new SimpleImageAttachmentAdapter(),
+      new SimpleTextAttachmentAdapter(),
+    ]);
 
 const threadListAdapter = createLocalStorageAdapter({
   storage: browserThreadStorage,

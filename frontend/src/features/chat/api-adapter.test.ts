@@ -165,6 +165,29 @@ test("includes collection ids in the request body when selected", async () => {
   vi.unstubAllGlobals();
 });
 
+test("collects attachment ids from message attachments into the body", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter("https://api.test", () => null);
+  const iter = adapter.run({
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: "hi" }],
+        attachments: [{ id: "12" }, { id: "not-a-number" }],
+      },
+    ],
+    abortSignal: new AbortController().signal,
+    context: {},
+  } as never) as AsyncIterable<unknown>;
+  await drain(iter);
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.attachment_ids).toEqual([12]);
+  vi.unstubAllGlobals();
+});
+
 test("throws a readable error on an error event", async () => {
   vi.stubGlobal(
     "fetch",
