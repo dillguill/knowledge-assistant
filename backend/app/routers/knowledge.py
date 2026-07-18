@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.auth import require_owner
 from app.config import get_settings
 from app.db import store
+from app.services import sync
 from app.services.ingestion import UnsupportedFileType, extract_text
 
 router = APIRouter(prefix="/api/knowledge")
@@ -20,14 +21,21 @@ class CollectionCreate(BaseModel):
              dependencies=[Depends(require_owner)])
 async def create_collection(body: CollectionCreate) -> dict:
     try:
-        return store.create_collection(body.name)
+        col = store.create_collection(body.name)
     except sqlite3.IntegrityError:
         raise HTTPException(409, "A collection with that name already exists.")
+    sync.schedule_push()
+    return col
 
 
 @router.get("/collections")
 async def get_collections() -> dict:
     return {"collections": store.list_collections()}
+
+
+@router.get("/status")
+async def knowledge_status() -> dict:
+    return {"sync": sync.status()}
 
 
 @router.post("/collections/{collection_id}/files", status_code=201,
@@ -41,9 +49,11 @@ async def upload_file(collection_id: int, file: UploadFile) -> dict:
                             file.content_type or "", raw)
     except UnsupportedFileType as exc:
         raise HTTPException(415, str(exc))
-    return store.add_document(collection_id, file.filename or "upload",
-                              file.content_type or "application/octet-stream",
-                              "upload", raw, text)
+    doc = store.add_document(collection_id, file.filename or "upload",
+                             file.content_type or "application/octet-stream",
+                             "upload", raw, text)
+    sync.schedule_push()
+    return doc
 
 
 @router.get("/collections/{collection_id}/files")
@@ -78,4 +88,5 @@ async def upload_attachment(file: UploadFile) -> dict:
     doc = store.add_document(None, file.filename or "attachment",
                              file.content_type or "application/octet-stream",
                              "attachment", raw, text)
+    sync.schedule_push()
     return {"id": doc["id"], "filename": doc["filename"]}
