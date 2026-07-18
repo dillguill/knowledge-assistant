@@ -27,6 +27,11 @@ test("401 surfaces a settings-pointing error", async () => {
   await expect(createCollection("X")).rejects.toThrow(/set it in settings/i);
 });
 
+test("413 surfaces a too-large error", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 413 })));
+  await expect(uploadFile(1, new File(["x"], "a.md"))).rejects.toThrow(/too large/i);
+});
+
 test("uploadFile posts multipart form data", async () => {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ownerToken: "tok" }));
   const fetchMock = vi.fn().mockResolvedValue(

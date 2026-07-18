@@ -19,6 +19,8 @@ function ownerHeaders(): Record<string, string> {
 async function check(res: Response): Promise<Response> {
   if (res.status === 401)
     throw new Error("Owner token required — set it in Settings.");
+  if (res.status === 413)
+    throw new Error("That file is too large (20 MB max).");
   if (!res.ok) throw new Error(`Request failed (${res.status}).`);
   return res;
 }

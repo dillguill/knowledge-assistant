@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     hf_dataset_repo: str = ""
     data_dir: str = "data"
     context_char_budget: int = 24000
-    attachment_max_bytes: int = 2_000_000
+    attachment_max_bytes: int = 20_000_000
 
     @property
     def origins(self) -> list[str]:

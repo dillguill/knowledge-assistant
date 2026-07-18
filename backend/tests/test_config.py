@@ -7,7 +7,7 @@ def test_knowledge_settings_defaults(monkeypatch):
     assert s.owner_token == ""
     assert s.data_dir == "data"
     assert s.context_char_budget == 24000
-    assert s.attachment_max_bytes == 2_000_000
+    assert s.attachment_max_bytes == 20_000_000
 
 
 def test_settings_read_env(monkeypatch):
