@@ -4,11 +4,16 @@ import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { ChatPage } from "@/features/chat/chat-page";
 import { ChatProvider } from "@/features/chat/chat-provider";
 import { TopbarStatus } from "@/features/chat/topbar-status";
+import { DocumentsPage } from "@/features/knowledge/documents-page";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { SettingsProvider } from "@/features/settings/settings-provider";
 
-type View = "chat" | "settings";
-const TITLES: Record<View, string> = { chat: "Chat", settings: "Settings" };
+type View = "chat" | "settings" | "documents";
+const TITLES: Record<View, string> = {
+  chat: "Chat",
+  settings: "Settings",
+  documents: "Documents",
+};
 
 function App() {
   const [view, setView] = useState<View>("chat");
@@ -21,7 +26,8 @@ function App() {
           title={TITLES[view]}
           active={view}
           onNavigate={(id) => {
-            if (id === "chat" || id === "settings") setView(id);
+            if (id === "chat" || id === "settings" || id === "documents")
+              setView(id);
           }}
         >
           {/* chat stays mounted so runtime and thread state survive view switches */}
@@ -29,6 +35,7 @@ function App() {
             <ChatPage />
           </div>
           {view === "settings" && <SettingsPage />}
+          {view === "documents" && <DocumentsPage />}
         </AppShell>
       </ChatProvider>
     </SettingsProvider>
