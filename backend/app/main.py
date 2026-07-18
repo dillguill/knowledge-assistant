@@ -9,6 +9,7 @@ from app.routers import chat as chat_router
 from app.routers import knowledge as knowledge_router
 from app.routers import models as models_router
 from app.services import sync
+from app.services.corpus import seed_demo_corpus
 
 
 def _startup() -> None:
@@ -22,6 +23,7 @@ def _startup() -> None:
     settings = get_settings()
     store.init_db(settings.data_dir)
     sync.pull()
+    seed_demo_corpus()
 
 
 def configure(app: FastAPI) -> FastAPI:
