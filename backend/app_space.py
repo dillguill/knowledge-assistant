@@ -12,12 +12,16 @@ import os
 from fastapi.responses import HTMLResponse
 from gradio import Server
 
-from app.main import configure
+from app.main import _startup, configure
 
 FRONTEND_URL = "https://dillguill.github.io/knowledge-assistant/"
 
 app = Server()
 configure(app)
+# gradio.Server manages its own lifespan, so run our startup work explicitly at
+# module import (how the Space executes this file) rather than via a FastAPI
+# lifespan we'd risk clobbering.
+_startup()
 
 # ZeroGPU Spaces fail at startup with "No @spaces.GPU function detected" unless
 # the app defines at least one @spaces.GPU function. This backend does no GPU
