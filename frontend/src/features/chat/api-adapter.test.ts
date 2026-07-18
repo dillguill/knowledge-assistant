@@ -165,6 +165,33 @@ test("includes collection ids in the request body when selected", async () => {
   vi.unstubAllGlobals();
 });
 
+test("sources event becomes source content parts", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      sseResponse([
+        JSON.stringify({
+          type: "sources",
+          sources: [{ id: 3, label: "S1", filename: "manual.pdf" }],
+        }),
+        JSON.stringify({ type: "text-delta", text: "22 Nm [S1]" }),
+        "[DONE]",
+      ]),
+    ),
+  );
+  const adapter = createApiAdapter("https://api.test", () => null, () => ({
+    collectionIds: [1],
+    attachmentIds: [],
+  }));
+  type Chunk = { content: readonly { type: string; title?: string }[] };
+  let last: Chunk | null = null;
+  for await (const chunk of run(adapter)) last = chunk as unknown as Chunk;
+  const sourceParts = last!.content.filter((p) => p.type === "source");
+  expect(sourceParts).toHaveLength(1);
+  expect(sourceParts[0].title).toBe("[S1] manual.pdf");
+  vi.unstubAllGlobals();
+});
+
 test("collects attachment ids from message attachments into the body", async () => {
   const fetchMock = vi.fn().mockResolvedValue(
     sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),

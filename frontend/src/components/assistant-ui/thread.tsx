@@ -22,6 +22,7 @@ import {
 } from "@/components/assistant-ui/tool-group";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
+import { CitationChip } from "@/features/chat/citation-chip";
 import { ComposerModelSelect } from "@/features/chat/composer-model-select";
 import { SourceSelector } from "@/features/chat/source-selector";
 import { cn } from "@/lib/utils";
@@ -398,6 +399,8 @@ const AssistantMessage: FC = () => {
               }
               case "text":
                 return <MarkdownText />;
+              case "source":
+                return <CitationChip {...part} />;
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
