@@ -20,7 +20,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { id: "chat", label: "Chat", icon: MessageSquare, planned: false },
   { id: "wiki", label: "Wiki", icon: BookOpen, planned: true },
-  { id: "documents", label: "Documents", icon: FileText, planned: true },
+  { id: "documents", label: "Documents", icon: FileText, planned: false },
   { id: "analytics", label: "Analytics", icon: BarChart3, planned: true },
   { id: "skills", label: "Skills", icon: Sparkles, planned: true },
   { id: "settings", label: "Settings", icon: Settings, planned: false },

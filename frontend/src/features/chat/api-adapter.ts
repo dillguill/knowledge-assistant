@@ -1,7 +1,10 @@
 import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
 
+type Source = { id: number; label: string; filename: string };
+
 type SseEvent =
   | { type: "text-delta"; text: string }
+  | { type: "sources"; sources: Source[] }
   | { type: "error"; code: string; message: string; retry_after?: number };
 
 export class ChatError extends Error {
@@ -69,10 +72,18 @@ async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<SseEv
   }
 }
 
+export type SourceConfig = { collectionIds: number[]; attachmentIds: number[] };
+
+const NO_SOURCES: () => SourceConfig = () => ({
+  collectionIds: [],
+  attachmentIds: [],
+});
+
 /** Streams chat completions from the Knowledge Assistant backend. */
 export function createApiAdapter(
   baseUrl: string,
   getModel: () => string | null,
+  getSourceConfig: () => SourceConfig = NO_SOURCES,
 ): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal, context }) {
@@ -80,16 +91,39 @@ export function createApiAdapter(
       if (context?.system) {
         apiMessages.unshift({ role: "system", content: context.system });
       }
+      const source = getSourceConfig();
+      const attachmentIds = [
+        ...messages
+          .flatMap((m) => m.attachments ?? [])
+          .map((a) => Number(a.id))
+          .filter(Number.isFinite),
+        ...source.attachmentIds,
+      ];
+      const body: Record<string, unknown> = {
+        model: getModel(),
+        messages: apiMessages,
+      };
+      if (source.collectionIds.length) body.collection_ids = source.collectionIds;
+      if (attachmentIds.length) body.attachment_ids = attachmentIds;
       const response = await fetch(`${baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: getModel(), messages: apiMessages }),
+        body: JSON.stringify(body),
         signal: abortSignal,
       });
       if (!response.ok || !response.body) {
         throw new Error(`The backend returned ${response.status} — try again shortly.`);
       }
       let text = "";
+      let sources: Source[] = [];
+      const sourceParts = () =>
+        sources.map((s) => ({
+          type: "source" as const,
+          sourceType: "url" as const,
+          id: String(s.id),
+          url: `${baseUrl}/api/knowledge/files/${s.id}/raw`,
+          title: `[${s.label}] ${s.filename}`,
+        }));
       for await (const event of parseSse(response.body)) {
         if (event.type === "error") {
           throw new ChatError(
@@ -98,9 +132,10 @@ export function createApiAdapter(
             event.retry_after,
           );
         }
+        if (event.type === "sources") sources = event.sources;
         if (event.type === "text-delta") {
           text += event.text;
-          yield { content: [{ type: "text" as const, text }] };
+          yield { content: [{ type: "text" as const, text }, ...sourceParts()] };
         }
       }
     },

@@ -149,6 +149,72 @@ test("unknown error codes get generic retry copy", async () => {
   vi.unstubAllGlobals();
 });
 
+test("includes collection ids in the request body when selected", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter("https://api.test", () => null, () => ({
+    collectionIds: [1, 2],
+    attachmentIds: [],
+  }));
+  await drain(run(adapter));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.collection_ids).toEqual([1, 2]);
+  expect(body.attachment_ids).toBeUndefined();
+  vi.unstubAllGlobals();
+});
+
+test("sources event becomes source content parts", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      sseResponse([
+        JSON.stringify({
+          type: "sources",
+          sources: [{ id: 3, label: "S1", filename: "manual.pdf" }],
+        }),
+        JSON.stringify({ type: "text-delta", text: "22 Nm [S1]" }),
+        "[DONE]",
+      ]),
+    ),
+  );
+  const adapter = createApiAdapter("https://api.test", () => null, () => ({
+    collectionIds: [1],
+    attachmentIds: [],
+  }));
+  type Chunk = { content: readonly { type: string; title?: string }[] };
+  let last: Chunk | null = null;
+  for await (const chunk of run(adapter)) last = chunk as unknown as Chunk;
+  const sourceParts = last!.content.filter((p) => p.type === "source");
+  expect(sourceParts).toHaveLength(1);
+  expect(sourceParts[0].title).toBe("[S1] manual.pdf");
+  vi.unstubAllGlobals();
+});
+
+test("collects attachment ids from message attachments into the body", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter("https://api.test", () => null);
+  const iter = adapter.run({
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: "hi" }],
+        attachments: [{ id: "12" }, { id: "not-a-number" }],
+      },
+    ],
+    abortSignal: new AbortController().signal,
+    context: {},
+  } as never) as AsyncIterable<unknown>;
+  await drain(iter);
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.attachment_ids).toEqual([12]);
+  vi.unstubAllGlobals();
+});
+
 test("throws a readable error on an error event", async () => {
   vi.stubGlobal(
     "fetch",

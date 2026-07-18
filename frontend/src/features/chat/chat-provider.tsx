@@ -10,8 +10,10 @@ import {
 import { createLocalStorageAdapter } from "@assistant-ui/core/react";
 import { loadSettings } from "@/features/settings/settings-storage";
 import { createApiAdapter } from "./api-adapter";
+import { BackendAttachmentAdapter } from "./backend-attachment-adapter";
 import { demoAdapter } from "./demo-adapter";
 import { GlobalInstructions } from "./global-instructions";
+import { SourceSelectionProvider, sourceRef } from "./source-selection";
 import { browserThreadStorage, STORAGE_PREFIX } from "./thread-storage";
 import { useBackendStatus, type BackendStatus } from "./use-backend-status";
 
@@ -38,13 +40,18 @@ export function useBackend() {
 const modelRef = { current: null as string | null };
 
 const chatAdapter = API_URL
-  ? createApiAdapter(API_URL, () => modelRef.current)
+  ? createApiAdapter(API_URL, () => modelRef.current, () => ({
+      collectionIds: sourceRef.current,
+      attachmentIds: [],
+    }))
   : demoAdapter;
 
-const attachments = new CompositeAttachmentAdapter([
-  new SimpleImageAttachmentAdapter(),
-  new SimpleTextAttachmentAdapter(),
-]);
+const attachments = API_URL
+  ? new BackendAttachmentAdapter()
+  : new CompositeAttachmentAdapter([
+      new SimpleImageAttachmentAdapter(),
+      new SimpleTextAttachmentAdapter(),
+    ]);
 
 const threadListAdapter = createLocalStorageAdapter({
   storage: browserThreadStorage,
@@ -77,7 +84,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       <GlobalInstructions />
       <StatusContext.Provider value={status}>
         <ModelContext.Provider value={{ model, setModel }}>
-          {children}
+          <SourceSelectionProvider>{children}</SourceSelectionProvider>
         </ModelContext.Provider>
       </StatusContext.Provider>
     </AssistantRuntimeProvider>
