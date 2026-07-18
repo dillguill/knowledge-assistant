@@ -112,3 +112,36 @@ async def test_chat_rejects_empty_messages():
     async with client() as c:
         resp = await c.post("/api/chat", json={"messages": []})
     assert resp.status_code == 422
+
+
+@respx.mock
+async def test_chat_with_sources_emits_sources_event_and_context(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.db import store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+    col = store.create_collection("Garage")
+    doc = store.add_document(col["id"], "manual.txt", "text/plain",
+                             "upload", b"x", "torque is 22 Nm")
+
+    route = respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "torque?"}],
+            "collection_ids": [col["id"]],
+        })
+    events = parse_events(resp.text)
+    first = json.loads(events[0])
+    assert first["type"] == "sources"
+    assert first["sources"] == [
+        {"id": doc["id"], "label": "S1", "filename": "manual.txt"}]
+    sent = json.loads(route.calls[0].request.content)
+    assert sent["messages"][0]["role"] == "system"
+    assert "torque is 22 Nm" in sent["messages"][0]["content"]
+    get_settings.cache_clear()

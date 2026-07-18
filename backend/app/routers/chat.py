@@ -5,7 +5,9 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.config import get_settings
 from app.services import openrouter
+from app.services.context_builder import build_source_context
 
 router = APIRouter()
 
@@ -18,6 +20,8 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     model: str | None = None
     messages: list[ChatMessage] = Field(min_length=1)
+    collection_ids: list[int] = []
+    attachment_ids: list[int] = []
 
 
 def _event(payload: dict) -> str:
@@ -25,10 +29,20 @@ def _event(payload: dict) -> str:
 
 
 async def _sse(request: ChatRequest) -> AsyncIterator[str]:
+    messages = [m.model_dump() for m in request.messages]
+    if request.collection_ids or request.attachment_ids:
+        block, sources = build_source_context(
+            request.collection_ids,
+            request.attachment_ids,
+            get_settings().context_char_budget,
+        )
+        if sources:
+            yield _event({"type": "sources", "sources": sources})
+            messages.insert(0, {"role": "system", "content": block})
     try:
         async for delta in openrouter.stream_chat(
             model=request.model,
-            messages=[m.model_dump() for m in request.messages],
+            messages=messages,
         ):
             yield _event({"type": "text-delta", "text": delta})
     except openrouter.RateLimitedError as exc:
