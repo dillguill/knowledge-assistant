@@ -1,9 +1,29 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.db import store
 from app.routers import chat as chat_router
+from app.routers import knowledge as knowledge_router
 from app.routers import models as models_router
+from app.services import sync
+from app.services.corpus import seed_demo_corpus
+
+
+def _startup() -> None:
+    """Idempotent startup work shared by both entrypoints.
+
+    Runs the DB migrations before any request is served. ``create_app`` invokes
+    it from a FastAPI lifespan (so ASGITransport tests, which skip lifespan, can
+    call ``store.init_db`` themselves), while the Space entrypoint calls it
+    directly at module import.
+    """
+    settings = get_settings()
+    store.init_db(settings.data_dir)
+    sync.pull()
+    seed_demo_corpus()
 
 
 def configure(app: FastAPI) -> FastAPI:
@@ -22,6 +42,8 @@ def configure(app: FastAPI) -> FastAPI:
     )
     app.include_router(models_router.router)
     app.include_router(chat_router.router)
+    app.include_router(knowledge_router.router)
+    app.include_router(knowledge_router.attachments_router)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
@@ -31,4 +53,12 @@ def configure(app: FastAPI) -> FastAPI:
 
 
 def create_app() -> FastAPI:
-    return configure(FastAPI(title="Knowledge Assistant API", version="0.1.0"))
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        _startup()
+        yield
+
+    return configure(
+        FastAPI(title="Knowledge Assistant API", version="0.3.0",
+                lifespan=lifespan)
+    )
