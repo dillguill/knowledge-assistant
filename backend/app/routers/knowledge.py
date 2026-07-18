@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.auth import require_owner
+from app.config import get_settings
 from app.db import store
 from app.services.ingestion import UnsupportedFileType, extract_text
 
@@ -58,3 +59,23 @@ async def get_raw(doc_id: int) -> FileResponse:
     return FileResponse(store.get_document_path(doc),
                         media_type=doc["content_type"],
                         filename=doc["filename"])
+
+
+attachments_router = APIRouter()
+
+
+@attachments_router.post("/api/attachments", status_code=201)
+async def upload_attachment(file: UploadFile) -> dict:
+    raw = await file.read()
+    settings = get_settings()
+    if len(raw) > settings.attachment_max_bytes:
+        raise HTTPException(413, "Attachment is too large.")
+    try:
+        text = extract_text(file.filename or "attachment",
+                            file.content_type or "", raw)
+    except UnsupportedFileType as exc:
+        raise HTTPException(415, str(exc))
+    doc = store.add_document(None, file.filename or "attachment",
+                             file.content_type or "application/octet-stream",
+                             "attachment", raw, text)
+    return {"id": doc["id"], "filename": doc["filename"]}

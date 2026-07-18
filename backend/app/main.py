@@ -39,6 +39,7 @@ def configure(app: FastAPI) -> FastAPI:
     app.include_router(models_router.router)
     app.include_router(chat_router.router)
     app.include_router(knowledge_router.router)
+    app.include_router(knowledge_router.attachments_router)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

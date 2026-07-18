@@ -78,3 +78,20 @@ async def test_unknown_collection_and_file_are_404():
                          headers=OWNER)
         assert r.status_code == 404
         assert (await c.get("/api/knowledge/files/999/raw")).status_code == 404
+
+
+async def test_attachment_upload_no_owner_needed():
+    async with client() as c:
+        r = await c.post("/api/attachments",
+                         files={"file": ("q.txt", b"spec sheet", "text/plain")})
+        assert r.status_code == 201
+        assert r.json()["filename"] == "q.txt"
+
+
+async def test_attachment_over_size_cap_is_413(monkeypatch):
+    monkeypatch.setenv("ATTACHMENT_MAX_BYTES", "4")
+    get_settings.cache_clear()
+    async with client() as c:
+        r = await c.post("/api/attachments",
+                         files={"file": ("q.txt", b"12345", "text/plain")})
+        assert r.status_code == 413
