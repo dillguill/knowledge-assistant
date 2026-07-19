@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.auth import require_owner
 from app.db import wiki_store
-from app.services import sync
+from app.services import drafter, openrouter, sync
 
 router = APIRouter(prefix="/api/wiki")
 
@@ -34,6 +34,14 @@ class PagePatch(BaseModel):
 class PageUpdate(BaseModel):
     content: str
     note: str = ""
+
+
+class DraftRequest(BaseModel):
+    instruction: str = Field(min_length=1, max_length=4000)
+    page_id: int | None = None
+    collection_ids: list[int] = []
+    attachment_ids: list[int] = []
+    model: str | None = None
 
 
 class ProposalCreate(BaseModel):
@@ -210,6 +218,35 @@ async def restore_version(page_id: int, version_id: int) -> dict:
 @router.get("/search")
 async def search_pages(q: str = Query(..., min_length=1)) -> dict:
     return {"results": wiki_store.search_pages(q)}
+
+
+@router.post("/draft", status_code=201, dependencies=[Depends(require_owner)])
+async def draft_page(body: DraftRequest) -> dict:
+    try:
+        proposal = await drafter.draft_proposal(
+            instruction=body.instruction,
+            page_id=body.page_id,
+            collection_ids=body.collection_ids,
+            attachment_ids=body.attachment_ids,
+            model=body.model,
+        )
+    except KeyError:
+        raise HTTPException(404, "Unknown page.")
+    except drafter.DraftError:
+        raise HTTPException(
+            502,
+            {"code": "draft_failed",
+             "message": "The model did not return a usable draft."},
+        )
+    except openrouter.UpstreamError:
+        raise HTTPException(
+            502,
+            {"code": "upstream_error", "message": "The model provider is unavailable."},
+        )
+    except wiki_store.PendingCapExceeded:
+        raise HTTPException(429, "Proposal queue is full.")
+    sync.schedule_push()
+    return proposal
 
 
 @router.post("/proposals", status_code=201)
