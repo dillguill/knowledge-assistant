@@ -11,6 +11,7 @@ from app.routers import models as models_router
 from app.routers import wiki as wiki_router
 from app.services import sync
 from app.services.corpus import seed_demo_corpus
+from app.services.wiki_seed import seed_wiki
 
 
 def _startup() -> None:
@@ -26,6 +27,7 @@ def _startup() -> None:
     wiki_store.init_wiki(settings.data_dir)
     sync.pull()
     seed_demo_corpus()
+    seed_wiki()
 
 
 def configure(app: FastAPI) -> FastAPI:
