@@ -241,3 +241,43 @@ async def test_page_by_slug_and_404():
 
         r = await c.get("/api/wiki/pages/by-slug/does-not-exist")
         assert r.status_code == 404
+
+
+async def test_create_folder_with_unknown_parent_id_is_404():
+    async with client() as c:
+        r = await c.post(
+            "/api/wiki/folders", json={"name": "Child", "parent_id": 9999},
+            headers=OWNER,
+        )
+        assert r.status_code == 404
+
+
+async def test_patch_folder_with_unknown_parent_id_is_404():
+    async with client() as c:
+        folder = (await c.post(
+            "/api/wiki/folders", json={"name": "Garage", "parent_id": None},
+            headers=OWNER,
+        )).json()
+        r = await c.patch(
+            f"/api/wiki/folders/{folder['id']}",
+            json={"parent_id": 9999},
+            headers=OWNER,
+        )
+        assert r.status_code == 404
+
+
+async def test_duplicate_folder_name_still_409_after_parent_check():
+    async with client() as c:
+        parent = (await c.post(
+            "/api/wiki/folders", json={"name": "Parent", "parent_id": None},
+            headers=OWNER,
+        )).json()
+        await c.post(
+            "/api/wiki/folders", json={"name": "Child", "parent_id": parent["id"]},
+            headers=OWNER,
+        )
+        r = await c.post(
+            "/api/wiki/folders", json={"name": "Child", "parent_id": parent["id"]},
+            headers=OWNER,
+        )
+        assert r.status_code == 409

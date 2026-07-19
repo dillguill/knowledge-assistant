@@ -63,6 +63,8 @@ async def get_tree() -> dict:
 
 @router.post("/folders", status_code=201, dependencies=[Depends(require_owner)])
 async def create_folder(body: FolderCreate) -> dict:
+    if body.parent_id is not None and _find_folder(body.parent_id) is None:
+        raise HTTPException(404, "Unknown parent folder.")
     try:
         folder = wiki_store.create_folder(body.name, body.parent_id)
     except sqlite3.IntegrityError:
@@ -76,6 +78,8 @@ async def patch_folder(folder_id: int, body: FolderPatch) -> dict:
     if _find_folder(folder_id) is None:
         raise HTTPException(404, "Unknown folder.")
     fields = body.model_dump(exclude_unset=True)
+    if "parent_id" in fields and fields["parent_id"] is not None and _find_folder(fields["parent_id"]) is None:
+        raise HTTPException(404, "Unknown parent folder.")
     try:
         if "name" in fields:
             wiki_store.rename_folder(folder_id, fields["name"])
