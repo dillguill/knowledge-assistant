@@ -119,3 +119,48 @@ test("opening a page renders its content via WikiMarkdown", async () => {
   await user.click(await screen.findByRole("button", { name: /welcome/i }));
   expect(await screen.findByRole("heading", { name: "Hello wiki" })).toBeInTheDocument();
 });
+
+test("a visitor sees no New page / New folder buttons at the wiki root", async () => {
+  vi.spyOn(api, "getTree").mockResolvedValue({ folders: [], pages: [] });
+  render(<WikiPage />);
+  await screen.findByText("Nothing here yet.");
+  expect(screen.queryByRole("button", { name: /new page/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /new folder/i })).not.toBeInTheDocument();
+});
+
+test("an owner can create a new page, which navigates straight to its editor", async () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ownerToken: "tok" }));
+  vi.spyOn(api, "getTree").mockResolvedValue({ folders: [], pages: [] });
+  vi.spyOn(api, "createPage").mockResolvedValue({
+    id: 9,
+    folder_id: null,
+    title: "New page",
+    slug: "new-page",
+    position: 0,
+    updated_at: "2026-07-18",
+    last_author: null,
+    content: "",
+    last_version: null,
+  });
+  vi.spyOn(api, "getPageBySlug").mockResolvedValue({
+    id: 9,
+    folder_id: null,
+    title: "New page",
+    slug: "new-page",
+    position: 0,
+    updated_at: "2026-07-18",
+    last_author: null,
+    content: "",
+    last_version: null,
+  });
+  const user = userEvent.setup();
+  render(<WikiPage />);
+
+  await user.click(await screen.findByRole("button", { name: /^new page$/i }));
+  await user.type(await screen.findByPlaceholderText("Page title"), "New page");
+  await user.click(screen.getByRole("button", { name: /^create page$/i }));
+
+  // Lands directly in the editor for the freshly-created page.
+  expect(await screen.findByRole("button", { name: /^save$/i })).toBeInTheDocument();
+  expect(document.querySelector(".cm-content")).toBeInTheDocument();
+});
