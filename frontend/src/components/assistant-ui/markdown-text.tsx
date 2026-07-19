@@ -9,7 +9,7 @@ import {
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
-import { type FC, memo, useState } from "react";
+import { type ComponentPropsWithoutRef, type FC, memo, useState } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
@@ -76,8 +76,15 @@ const useCopyToClipboard = ({
   return { isCopied, copyToClipboard };
 };
 
-const defaultComponents = memoizeMarkdownComponents({
-  h1: ({ className, ...props }) => (
+/**
+ * Prose styling shared by every markdown surface in the app (chat replies and
+ * the wiki). Kept independent of assistant-ui's streaming-only primitives
+ * (`useIsMarkdownCodeBlock`, `CodeHeader`) so it can be reused by plain
+ * `react-markdown` consumers like `features/wiki/wiki-markdown.tsx` — only
+ * the code-block handling differs per surface, so it stays out of this map.
+ */
+export const proseMarkdownComponents = {
+  h1: ({ className, ...props }: ComponentPropsWithoutRef<"h1">) => (
     <h1
       className={cn(
         "aui-md-h1 mt-5 mb-2 scroll-m-20 text-xl font-semibold first:mt-0 last:mb-0",
@@ -86,7 +93,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  h2: ({ className, ...props }) => (
+  h2: ({ className, ...props }: ComponentPropsWithoutRef<"h2">) => (
     <h2
       className={cn(
         "aui-md-h2 mt-5 mb-2 scroll-m-20 text-lg font-semibold first:mt-0 last:mb-0",
@@ -95,7 +102,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  h3: ({ className, ...props }) => (
+  h3: ({ className, ...props }: ComponentPropsWithoutRef<"h3">) => (
     <h3
       className={cn(
         "aui-md-h3 mt-4 mb-1.5 scroll-m-20 text-base font-semibold first:mt-0 last:mb-0",
@@ -104,7 +111,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  h4: ({ className, ...props }) => (
+  h4: ({ className, ...props }: ComponentPropsWithoutRef<"h4">) => (
     <h4
       className={cn(
         "aui-md-h4 mt-3.5 mb-1 scroll-m-20 text-base font-medium first:mt-0 last:mb-0",
@@ -113,7 +120,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  h5: ({ className, ...props }) => (
+  h5: ({ className, ...props }: ComponentPropsWithoutRef<"h5">) => (
     <h5
       className={cn(
         "aui-md-h5 mt-3 mb-1 text-sm font-semibold first:mt-0 last:mb-0",
@@ -122,7 +129,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  h6: ({ className, ...props }) => (
+  h6: ({ className, ...props }: ComponentPropsWithoutRef<"h6">) => (
     <h6
       className={cn(
         "aui-md-h6 mt-3 mb-1 text-sm font-medium first:mt-0 last:mb-0",
@@ -131,7 +138,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  p: ({ className, ...props }) => (
+  p: ({ className, ...props }: ComponentPropsWithoutRef<"p">) => (
     <p
       className={cn(
         "aui-md-p my-3 leading-relaxed first:mt-0 last:mb-0",
@@ -140,7 +147,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  a: ({ className, ...props }) => (
+  a: ({ className, ...props }: ComponentPropsWithoutRef<"a">) => (
     <a
       className={cn(
         "aui-md-a text-primary hover:text-primary/80 underline underline-offset-2",
@@ -149,7 +156,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  blockquote: ({ className, ...props }) => (
+  blockquote: ({ className, ...props }: ComponentPropsWithoutRef<"blockquote">) => (
     <blockquote
       className={cn(
         "aui-md-blockquote border-muted-foreground/30 text-muted-foreground my-3 border-s-2 ps-4",
@@ -158,7 +165,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  ul: ({ className, ...props }) => (
+  ul: ({ className, ...props }: ComponentPropsWithoutRef<"ul">) => (
     <ul
       className={cn(
         "aui-md-ul marker:text-muted-foreground my-3 ms-5 list-disc [&>li]:mt-1",
@@ -167,7 +174,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  ol: ({ className, ...props }) => (
+  ol: ({ className, ...props }: ComponentPropsWithoutRef<"ol">) => (
     <ol
       className={cn(
         "aui-md-ol marker:text-muted-foreground my-3 ms-5 list-decimal [&>li]:mt-1",
@@ -176,13 +183,13 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  hr: ({ className, ...props }) => (
+  hr: ({ className, ...props }: ComponentPropsWithoutRef<"hr">) => (
     <hr
       className={cn("aui-md-hr border-muted-foreground/20 my-3", className)}
       {...props}
     />
   ),
-  table: ({ className, ...props }) => (
+  table: ({ className, ...props }: ComponentPropsWithoutRef<"table">) => (
     <table
       className={cn(
         "aui-md-table my-3 w-full border-separate border-spacing-0 overflow-y-auto",
@@ -191,7 +198,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  th: ({ className, ...props }) => (
+  th: ({ className, ...props }: ComponentPropsWithoutRef<"th">) => (
     <th
       className={cn(
         "aui-md-th bg-muted px-3 py-1.5 text-start font-medium first:rounded-ss-lg last:rounded-se-lg [[align=center]]:text-center [[align=right]]:text-right",
@@ -200,7 +207,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  td: ({ className, ...props }) => (
+  td: ({ className, ...props }: ComponentPropsWithoutRef<"td">) => (
     <td
       className={cn(
         "aui-md-td border-muted-foreground/20 border-s border-b px-3 py-1.5 text-start last:border-e [[align=center]]:text-center [[align=right]]:text-right",
@@ -209,7 +216,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  tr: ({ className, ...props }) => (
+  tr: ({ className, ...props }: ComponentPropsWithoutRef<"tr">) => (
     <tr
       className={cn(
         "aui-md-tr m-0 border-b p-0 first:border-t [&:last-child>td:first-child]:rounded-es-lg [&:last-child>td:last-child]:rounded-ee-lg",
@@ -218,39 +225,41 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  li: ({ className, ...props }) => (
+  li: ({ className, ...props }: ComponentPropsWithoutRef<"li">) => (
     <li className={cn("aui-md-li leading-relaxed", className)} {...props} />
   ),
-  strong: ({ className, ...props }) => (
+  strong: ({ className, ...props }: ComponentPropsWithoutRef<"strong">) => (
     <strong
       className={cn("aui-md-strong font-semibold", className)}
       {...props}
     />
   ),
-  sup: ({ className, ...props }) => (
+  sup: ({ className, ...props }: ComponentPropsWithoutRef<"sup">) => (
     <sup
       className={cn("aui-md-sup [&>a]:text-xs [&>a]:no-underline", className)}
       {...props}
     />
   ),
+};
+
+/** Shared with `features/wiki/wiki-markdown.tsx` so fenced code blocks look
+ * identical across chat and the wiki, even though each surface detects
+ * inline-vs-block code differently. */
+export const markdownPreClassName =
+  "aui-md-pre border-border/50 bg-muted/30 overflow-x-auto rounded-t-none rounded-b-xl border border-t-0 p-3.5 text-[13px] leading-relaxed";
+export const markdownInlineCodeClassName =
+  "aui-md-inline-code bg-muted rounded-md px-1.5 py-0.5 font-mono text-[0.85em]";
+
+const defaultComponents = memoizeMarkdownComponents({
+  ...proseMarkdownComponents,
   pre: ({ className, ...props }) => (
-    <pre
-      className={cn(
-        "aui-md-pre border-border/50 bg-muted/30 overflow-x-auto rounded-t-none rounded-b-xl border border-t-0 p-3.5 text-[13px] leading-relaxed",
-        className,
-      )}
-      {...props}
-    />
+    <pre className={cn(markdownPreClassName, className)} {...props} />
   ),
   code: function Code({ className, ...props }) {
     const isCodeBlock = useIsMarkdownCodeBlock();
     return (
       <code
-        className={cn(
-          !isCodeBlock &&
-            "aui-md-inline-code bg-muted rounded-md px-1.5 py-0.5 font-mono text-[0.85em]",
-          className,
-        )}
+        className={cn(!isCodeBlock && markdownInlineCodeClassName, className)}
         {...props}
       />
     );
