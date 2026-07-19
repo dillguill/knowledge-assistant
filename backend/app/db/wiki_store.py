@@ -92,6 +92,32 @@ def _unique_slug(conn: sqlite3.Connection, title: str) -> str:
 # --- folders ---
 
 
+def _check_folder_name_uniqueness(
+    conn: sqlite3.Connection, name: str, parent_id: int | None, exclude_id: int | None = None
+) -> None:
+    """Check if another folder with the same name and parent already exists.
+
+    Handles NULL parent_id correctly using IS NULL (since SQLite treats NULL != NULL).
+    Raises sqlite3.IntegrityError if a conflict is found.
+    exclude_id: if provided, ignore folders with this ID (used during rename/move).
+    """
+    if parent_id is None:
+        # Check for root-level duplicate
+        query = "SELECT 1 FROM wiki_folders WHERE name = ? AND parent_id IS NULL"
+        params = (name,)
+    else:
+        # Check for duplicate within a specific parent
+        query = "SELECT 1 FROM wiki_folders WHERE name = ? AND parent_id = ?"
+        params = (name, parent_id)
+
+    if exclude_id is not None:
+        query += " AND id != ?"
+        params = params + (exclude_id,)
+
+    if conn.execute(query, params).fetchone():
+        raise sqlite3.IntegrityError("duplicate folder name")
+
+
 def _folder_dict(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],
@@ -104,6 +130,7 @@ def _folder_dict(row: sqlite3.Row) -> dict:
 
 def create_folder(name: str, parent_id: int | None) -> dict:
     with _connect() as conn:
+        _check_folder_name_uniqueness(conn, name, parent_id)
         cur = conn.execute(
             "INSERT INTO wiki_folders (name, parent_id) VALUES (?, ?)",
             (name, parent_id),
@@ -124,6 +151,13 @@ def list_folders() -> list[dict]:
 
 def rename_folder(folder_id: int, name: str) -> None:
     with _connect() as conn:
+        # Get the folder's current parent_id before checking
+        folder = conn.execute(
+            "SELECT parent_id FROM wiki_folders WHERE id = ?", (folder_id,)
+        ).fetchone()
+        if not folder:
+            raise ValueError("Folder not found")
+        _check_folder_name_uniqueness(conn, name, folder["parent_id"], exclude_id=folder_id)
         conn.execute(
             "UPDATE wiki_folders SET name = ? WHERE id = ?", (name, folder_id)
         )
@@ -131,6 +165,13 @@ def rename_folder(folder_id: int, name: str) -> None:
 
 def move_folder(folder_id: int, parent_id: int | None) -> None:
     with _connect() as conn:
+        # Get the folder's name before checking
+        folder = conn.execute(
+            "SELECT name FROM wiki_folders WHERE id = ?", (folder_id,)
+        ).fetchone()
+        if not folder:
+            raise ValueError("Folder not found")
+        _check_folder_name_uniqueness(conn, folder["name"], parent_id, exclude_id=folder_id)
         conn.execute(
             "UPDATE wiki_folders SET parent_id = ? WHERE id = ?",
             (parent_id, folder_id),

@@ -40,6 +40,13 @@ def test_create_folder_duplicate_name_same_parent_raises():
         wiki_store.create_folder("Engines", parent["id"])
 
 
+def test_create_folder_duplicate_root_name_raises():
+    # App-level check: two ROOT folders (parent_id=NULL) with same name must be rejected.
+    wiki_store.create_folder("Engines", None)
+    with pytest.raises(sqlite3.IntegrityError):
+        wiki_store.create_folder("Engines", None)
+
+
 def test_create_folder_same_name_different_parent_ok():
     parent = wiki_store.create_folder("Engines", None)
     child = wiki_store.create_folder("Engines", parent["id"])
@@ -72,12 +79,29 @@ def test_rename_folder():
     assert [x["name"] for x in wiki_store.list_folders()] == ["Motors"]
 
 
+def test_rename_folder_to_existing_root_name_raises():
+    # App-level check: renaming a root folder to an existing root name must be rejected.
+    f1 = wiki_store.create_folder("Engines", None)
+    wiki_store.create_folder("Motors", None)
+    with pytest.raises(sqlite3.IntegrityError):
+        wiki_store.rename_folder(f1["id"], "Motors")
+
+
 def test_move_folder():
     a = wiki_store.create_folder("A", None)
     b = wiki_store.create_folder("B", None)
     wiki_store.move_folder(b["id"], a["id"])
     moved = [x for x in wiki_store.list_folders() if x["id"] == b["id"]][0]
     assert moved["parent_id"] == a["id"]
+
+
+def test_move_folder_into_parent_with_same_name_raises():
+    # App-level check: moving a folder into a parent that already has a same-named child must be rejected.
+    parent = wiki_store.create_folder("Parent", None)
+    child1 = wiki_store.create_folder("Child", parent["id"])
+    child2 = wiki_store.create_folder("Child", None)
+    with pytest.raises(sqlite3.IntegrityError):
+        wiki_store.move_folder(child2["id"], parent["id"])
 
 
 # --- page create ---
