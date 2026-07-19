@@ -259,7 +259,17 @@ async def test_chat_with_target_and_sources_orders_target_before_sources(
 
 
 @respx.mock
-async def test_chat_with_unknown_target_emits_error_and_skips_upstream():
+async def test_chat_with_unknown_target_emits_error_and_skips_upstream(
+    tmp_path, monkeypatch
+):
+    from app.config import get_settings
+    from app.db import store, wiki_store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+    wiki_store.init_wiki(str(tmp_path))
+
     route = respx.post(UPSTREAM).respond(
         status_code=200,
         headers={"content-type": "text/event-stream"},
@@ -276,3 +286,4 @@ async def test_chat_with_unknown_target_emits_error_and_skips_upstream():
     assert err["code"] == "unknown_target"
     assert events[-1] == "[DONE]"
     assert route.called is False
+    get_settings.cache_clear()
