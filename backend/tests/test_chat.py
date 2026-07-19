@@ -182,3 +182,97 @@ async def test_chat_with_only_wiki_pages_emits_sources_event_and_context(
     assert sent["messages"][0]["role"] == "system"
     assert "wiki torque is 26 Nm" in sent["messages"][0]["content"]
     get_settings.cache_clear()
+
+
+@respx.mock
+async def test_chat_with_target_emits_target_event_first(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.db import store, wiki_store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+    wiki_store.init_wiki(str(tmp_path))
+    page = wiki_store.create_page("Torque Specs", None, "torque is 22 Nm", "owner")
+
+    route = respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "edit it"}],
+            "target_page_id": page["id"],
+        })
+    events = parse_events(resp.text)
+    first = json.loads(events[0])
+    assert first["type"] == "target"
+    assert first["target"] == {
+        "page_id": page["id"], "title": "Torque Specs", "slug": page["slug"]}
+    sent = json.loads(route.calls[0].request.content)
+    assert sent["messages"][0]["role"] == "system"
+    assert "Torque Specs" in sent["messages"][0]["content"]
+    assert "torque is 22 Nm" in sent["messages"][0]["content"]
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_chat_with_target_and_sources_orders_target_before_sources(
+    tmp_path, monkeypatch
+):
+    from app.config import get_settings
+    from app.db import store, wiki_store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+    wiki_store.init_wiki(str(tmp_path))
+    target_page = wiki_store.create_page(
+        "Torque Specs", None, "torque is 22 Nm", "owner"
+    )
+    source_page = wiki_store.create_page(
+        "Reference", None, "reference detail", "owner"
+    )
+
+    route = respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "edit it"}],
+            "target_page_id": target_page["id"],
+            "wiki_page_ids": [source_page["id"]],
+        })
+    events = parse_events(resp.text)
+    first = json.loads(events[0])
+    second = json.loads(events[1])
+    assert first["type"] == "target"
+    assert second["type"] == "sources"
+
+    sent = json.loads(route.calls[0].request.content)
+    assert "Torque Specs" in sent["messages"][0]["content"]
+    assert "reference detail" in sent["messages"][1]["content"]
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_chat_with_unknown_target_emits_error_and_skips_upstream():
+    route = respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "edit it"}],
+            "target_page_id": 9999,
+        })
+    events = parse_events(resp.text)
+    err = json.loads(events[0])
+    assert err["type"] == "error"
+    assert err["code"] == "unknown_target"
+    assert events[-1] == "[DONE]"
+    assert route.called is False
