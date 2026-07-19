@@ -151,8 +151,19 @@ def test_list_pages():
 # --- update_page_content ---
 
 
-def test_update_page_content_creates_version_and_bumps_updated_at():
+def test_update_page_content_creates_version_and_bumps_updated_at(data_dir):
     page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
+
+    # Backdate the page's updated_at to verify it bumps on update
+    conn = sqlite3.connect(data_dir / "knowledge.db")
+    conn.execute(
+        "UPDATE wiki_pages SET updated_at = '2000-01-01 00:00:00' WHERE id = ?",
+        (page["id"],),
+    )
+    conn.commit()
+    conn.close()
+
+    original_updated_at = "2000-01-01 00:00:00"
     updated = wiki_store.update_page_content(
         page["id"], "v2", "assistant", note="clarify", citations=["doc-1"]
     )
@@ -162,6 +173,9 @@ def test_update_page_content_creates_version_and_bumps_updated_at():
 
     fetched = wiki_store.get_page(page["id"])
     assert fetched["content"] == "v2"
+    # Assert that updated_at has bumped
+    assert fetched["updated_at"] != original_updated_at
+    assert fetched["updated_at"] > original_updated_at
 
 
 def test_update_page_content_citations_round_trip_as_list():
