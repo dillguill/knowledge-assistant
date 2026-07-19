@@ -9,6 +9,7 @@ import { folderBreadcrumb, type WikiFolderTree } from "./tree";
 import { PageEditor } from "./page-editor";
 import { DeleteConfirmDialog, MoveDialog, RenameDialog } from "./wiki-dialogs";
 import { HistoryPanel } from "./history-panel";
+import { exportPageAsMarkdown, exportPageAsPdf } from "./export";
 
 type PageDialog = null | "rename" | "move" | "delete";
 
@@ -128,11 +129,11 @@ export function WikiPageView({
   const authorKey = page.last_version?.author ?? page.last_author ?? null;
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-6">
+    <div className="wiki-print-area h-full overflow-y-auto px-6 py-6">
       <div className="mx-auto flex max-w-3xl flex-col gap-4">
         <nav
           aria-label="Breadcrumb"
-          className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
+          className="no-print flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
         >
           <button
             onClick={() => guardedNavigateFolder(null)}
@@ -162,7 +163,7 @@ export function WikiPageView({
             </p>
           </div>
           {mode === "view" && (
-            <div className="flex shrink-0 flex-wrap gap-2">
+            <div className="no-print flex shrink-0 flex-wrap gap-2">
               {isOwner && (
                 <Button size="sm" variant="outline" onClick={handleEdit}>
                   Edit
@@ -174,6 +175,16 @@ export function WikiPageView({
                 onClick={() => setShowHistory((v) => !v)}
               >
                 History
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => exportPageAsMarkdown(page.slug, page.content)}
+              >
+                Export .md
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => exportPageAsPdf()}>
+                Export PDF
               </Button>
               {isOwner && (
                 <>
@@ -193,26 +204,28 @@ export function WikiPageView({
         </div>
 
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="no-print text-sm text-destructive">
             {error}
           </p>
         )}
 
         {mode === "view" && showHistory && (
-          <HistoryPanel
-            pageId={page.id}
-            currentContent={page.content}
-            resolve={resolve}
-            isOwner={isOwner}
-            onClose={() => setShowHistory(false)}
-            onRestored={refresh}
-          />
+          <div className="no-print">
+            <HistoryPanel
+              pageId={page.id}
+              currentContent={page.content}
+              resolve={resolve}
+              isOwner={isOwner}
+              onClose={() => setShowHistory(false)}
+              onRestored={refresh}
+            />
+          </div>
         )}
 
         {mode === "view" ? (
           <WikiMarkdown content={page.content} resolve={resolve} onNavigate={guardedNavigatePage} />
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="no-print flex flex-col gap-3">
             <PageEditor value={draft} onChange={setDraft} autoFocus />
             <label htmlFor="save-note" className="sr-only">
               Note (optional)
