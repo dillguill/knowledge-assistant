@@ -8,12 +8,14 @@ import { TopbarStatus } from "@/features/chat/topbar-status";
 import { DocumentsPage } from "@/features/knowledge/documents-page";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { SettingsProvider } from "@/features/settings/settings-provider";
+import { WikiPage } from "@/features/wiki/wiki-page";
 
-type View = "chat" | "settings" | "documents";
+type View = "chat" | "settings" | "documents" | "wiki";
 const TITLES: Record<View, string> = {
   chat: "Chat",
   settings: "Settings",
   documents: "Documents",
+  wiki: "Wiki",
 };
 
 function App() {
@@ -30,7 +32,12 @@ function App() {
             title={TITLES[view]}
             active={view}
             onNavigate={(id) => {
-              if (id === "chat" || id === "settings" || id === "documents")
+              if (
+                id === "chat" ||
+                id === "settings" ||
+                id === "documents" ||
+                id === "wiki"
+              )
                 setView(id);
             }}
           >
@@ -40,6 +47,7 @@ function App() {
             </div>
             {view === "settings" && <SettingsPage />}
             {view === "documents" && <DocumentsPage />}
+            {view === "wiki" && <WikiPage />}
           </AppShell>
         </ChatProvider>
       </TooltipProvider>
