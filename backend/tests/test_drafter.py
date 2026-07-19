@@ -116,6 +116,73 @@ async def test_draft_missing_fence_returns_502_and_creates_no_proposal(
     get_settings.cache_clear()
 
 
+@respx.mock
+async def test_draft_opener_without_closing_fence_returns_502_and_creates_no_proposal(
+    tmp_path, monkeypatch
+):
+    await env(tmp_path, monkeypatch)
+    respx.post(UPSTREAM).respond(
+        json=_completion("```wiki-update\n# Incomplete\nno closing fence here")
+    )
+    async with client() as c:
+        resp = await c.post(
+            "/api/wiki/draft",
+            json={"instruction": "Draft a page"},
+            headers=OWNER,
+        )
+    assert resp.status_code == 502
+    assert "draft_failed" in str(resp.json()["detail"])
+
+    async with client() as c:
+        proposals = (await c.get("/api/wiki/proposals")).json()["proposals"]
+    assert proposals == []
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_draft_nested_code_block_survives_extraction(tmp_path, monkeypatch):
+    await env(tmp_path, monkeypatch)
+    completion_text = (
+        "Sure thing:\n"
+        "```wiki-update\n"
+        "# Example\n"
+        "\n"
+        "```python\n"
+        "def add(a, b):\n"
+        "    return a + b\n"
+        "```\n"
+        "\n"
+        "That's it.\n"
+        "```\n"
+    )
+    expected_content = (
+        "# Example\n"
+        "\n"
+        "```python\n"
+        "def add(a, b):\n"
+        "    return a + b\n"
+        "```\n"
+        "\n"
+        "That's it."
+    )
+    respx.post(UPSTREAM).respond(json=_completion(completion_text))
+    async with client() as c:
+        resp = await c.post(
+            "/api/wiki/draft",
+            json={"instruction": "Draft a page with a code sample"},
+            headers=OWNER,
+        )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["content"] == expected_content
+
+    async with client() as c:
+        proposals = (await c.get("/api/wiki/proposals")).json()["proposals"]
+    stored = next(p for p in proposals if p["id"] == body["id"])
+    assert stored["content"] == expected_content
+    get_settings.cache_clear()
+
+
 async def test_draft_is_owner_gated(tmp_path, monkeypatch):
     await env(tmp_path, monkeypatch)
     async with client() as c:
@@ -144,7 +211,7 @@ async def test_draft_pending_cap_exceeded_returns_429(tmp_path, monkeypatch):
     for i in range(25):
         wiki_store.create_proposal(None, f"Filler {i}", None, "x")
 
-    respx.post(UPSTREAM).respond(
+    route = respx.post(UPSTREAM).respond(
         json=_completion("```wiki-update\nnew content\n```")
     )
     async with client() as c:
@@ -154,6 +221,11 @@ async def test_draft_pending_cap_exceeded_returns_429(tmp_path, monkeypatch):
             headers=OWNER,
         )
     assert resp.status_code == 429
+    assert route.called is False
+
+    async with client() as c:
+        proposals = (await c.get("/api/wiki/proposals")).json()["proposals"]
+    assert len(proposals) == 25
     get_settings.cache_clear()
 
 

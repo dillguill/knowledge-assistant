@@ -394,6 +394,16 @@ class PendingCapExceeded(Exception):
 _PENDING_CAP = 25
 
 
+def pending_proposals_full() -> bool:
+    """Cheap pre-check so callers can skip expensive work (e.g. an LLM call)
+    before hitting the authoritative cap check inside create_proposal."""
+    with _connect() as conn:
+        pending_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM wiki_proposals WHERE status = 'pending'"
+        ).fetchone()["n"]
+    return pending_count >= _PENDING_CAP
+
+
 # --- proposals ---
 
 
