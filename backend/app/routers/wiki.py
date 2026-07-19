@@ -36,6 +36,15 @@ class PageUpdate(BaseModel):
     note: str = ""
 
 
+class ProposalCreate(BaseModel):
+    page_id: int | None = None
+    title: str = Field(min_length=1, max_length=200)
+    folder_id: int | None = None
+    content: str = Field(max_length=200_000)
+    rationale: str = Field(default="", max_length=2000)
+    citations: list[dict] | None = None
+
+
 def _find_folder(folder_id: int) -> dict | None:
     return next((f for f in wiki_store.list_folders() if f["id"] == folder_id), None)
 
@@ -201,3 +210,56 @@ async def restore_version(page_id: int, version_id: int) -> dict:
 @router.get("/search")
 async def search_pages(q: str = Query(..., min_length=1)) -> dict:
     return {"results": wiki_store.search_pages(q)}
+
+
+@router.post("/proposals", status_code=201)
+async def create_proposal(body: ProposalCreate) -> dict:
+    if body.page_id is not None and wiki_store.get_page(body.page_id) is None:
+        raise HTTPException(404, "Unknown page.")
+    if body.folder_id is not None and _find_folder(body.folder_id) is None:
+        raise HTTPException(404, "Unknown folder.")
+    try:
+        proposal = wiki_store.create_proposal(
+            body.page_id, body.title, body.folder_id, body.content,
+            rationale=body.rationale, citations=body.citations,
+        )
+    except wiki_store.PendingCapExceeded:
+        raise HTTPException(429, "Proposal queue is full.")
+    sync.schedule_push()
+    return proposal
+
+
+@router.get("/proposals")
+async def list_proposals(status: str | None = None) -> dict:
+    proposals = wiki_store.list_proposals(status)
+    for proposal in proposals:
+        if proposal["page_id"] is None:
+            proposal["current_content"] = None
+        else:
+            page = wiki_store.get_page(proposal["page_id"])
+            proposal["current_content"] = page["content"] if page else None
+    return {"proposals": proposals}
+
+
+@router.post("/proposals/{proposal_id}/approve", dependencies=[Depends(require_owner)])
+async def approve_proposal(proposal_id: int) -> dict:
+    if wiki_store.get_proposal(proposal_id) is None:
+        raise HTTPException(404, "Unknown proposal.")
+    try:
+        page = wiki_store.approve_proposal(proposal_id)
+    except ValueError:
+        raise HTTPException(409, "Proposal is not pending.")
+    sync.schedule_push()
+    return _page_response(page["id"])
+
+
+@router.post("/proposals/{proposal_id}/reject", dependencies=[Depends(require_owner)])
+async def reject_proposal(proposal_id: int) -> dict:
+    if wiki_store.get_proposal(proposal_id) is None:
+        raise HTTPException(404, "Unknown proposal.")
+    try:
+        proposal = wiki_store.reject_proposal(proposal_id)
+    except ValueError:
+        raise HTTPException(409, "Proposal is not pending.")
+    sync.schedule_push()
+    return proposal

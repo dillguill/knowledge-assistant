@@ -356,6 +356,145 @@ def list_versions(page_id: int) -> list[dict]:
     ]
 
 
+class PendingCapExceeded(Exception):
+    """Raised when the pending proposal queue is already at capacity."""
+
+
+_PENDING_CAP = 25
+
+
+# --- proposals ---
+
+
+def _proposal_dict(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "page_id": row["page_id"],
+        "title": row["title"],
+        "folder_id": row["folder_id"],
+        "base_version_id": row["base_version_id"],
+        "content": row["content"],
+        "rationale": row["rationale"],
+        "citations": json.loads(row["citations"]),
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "decided_at": row["decided_at"],
+    }
+
+
+def create_proposal(
+    page_id: int | None,
+    title: str,
+    folder_id: int | None,
+    content: str,
+    rationale: str = "",
+    citations: list | None = None,
+) -> dict:
+    citations_json = json.dumps(citations or [])
+    with _connect() as conn:
+        pending_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM wiki_proposals WHERE status = 'pending'"
+        ).fetchone()["n"]
+        if pending_count >= _PENDING_CAP:
+            raise PendingCapExceeded("Pending proposal queue is full.")
+
+        base_version_id = None
+        if page_id is not None:
+            version_row = conn.execute(
+                """SELECT id FROM wiki_versions WHERE page_id = ?
+                   ORDER BY id DESC LIMIT 1""",
+                (page_id,),
+            ).fetchone()
+            base_version_id = version_row["id"] if version_row else None
+
+        cur = conn.execute(
+            """INSERT INTO wiki_proposals
+                   (page_id, title, folder_id, base_version_id, content,
+                    rationale, citations)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (page_id, title, folder_id, base_version_id, content,
+             rationale, citations_json),
+        )
+        row = conn.execute(
+            "SELECT * FROM wiki_proposals WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+    return _proposal_dict(row)
+
+
+def get_proposal(proposal_id: int) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM wiki_proposals WHERE id = ?", (proposal_id,)
+        ).fetchone()
+    return _proposal_dict(row) if row else None
+
+
+def list_proposals(status: str | None = None) -> list[dict]:
+    with _connect() as conn:
+        if status is None:
+            rows = conn.execute(
+                "SELECT * FROM wiki_proposals ORDER BY id DESC"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM wiki_proposals WHERE status = ? ORDER BY id DESC",
+                (status,),
+            ).fetchall()
+    return [_proposal_dict(r) for r in rows]
+
+
+def approve_proposal(proposal_id: int) -> dict:
+    proposal = get_proposal(proposal_id)
+    if proposal is None:
+        raise ValueError("Proposal not found")
+    if proposal["status"] != "pending":
+        raise ValueError("Proposal is not pending")
+
+    if proposal["page_id"] is None:
+        page = create_page(
+            proposal["title"], proposal["folder_id"], proposal["content"],
+            author="assistant",
+        )
+    else:
+        # page_id, when set, is guaranteed to reference a live page: the
+        # schema's ON DELETE CASCADE removes a proposal the moment its
+        # target page is deleted, so a fetchable proposal with a non-null
+        # page_id always has a live page behind it.
+        page = update_page_content(
+            proposal["page_id"], proposal["content"], author="assistant",
+            note=f"approved proposal #{proposal_id}",
+            citations=proposal["citations"],
+        )
+
+    with _connect() as conn:
+        conn.execute(
+            """UPDATE wiki_proposals
+               SET status = 'approved', decided_at = datetime('now')
+               WHERE id = ?""",
+            (proposal_id,),
+        )
+    return page
+
+
+def reject_proposal(proposal_id: int) -> dict:
+    proposal = get_proposal(proposal_id)
+    if proposal is None:
+        raise ValueError("Proposal not found")
+    if proposal["status"] != "pending":
+        raise ValueError("Proposal is not pending")
+    with _connect() as conn:
+        conn.execute(
+            """UPDATE wiki_proposals
+               SET status = 'rejected', decided_at = datetime('now')
+               WHERE id = ?""",
+            (proposal_id,),
+        )
+        row = conn.execute(
+            "SELECT * FROM wiki_proposals WHERE id = ?", (proposal_id,)
+        ).fetchone()
+    return _proposal_dict(row)
+
+
 def get_version(version_id: int) -> dict | None:
     with _connect() as conn:
         row = conn.execute(
