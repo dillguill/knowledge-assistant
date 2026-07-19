@@ -4,12 +4,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.db import store
+from app.db import store, wiki_store
 from app.routers import chat as chat_router
 from app.routers import knowledge as knowledge_router
 from app.routers import models as models_router
+from app.routers import wiki as wiki_router
 from app.services import sync
 from app.services.corpus import seed_demo_corpus
+from app.services.wiki_seed import seed_wiki
 
 
 def _startup() -> None:
@@ -22,8 +24,10 @@ def _startup() -> None:
     """
     settings = get_settings()
     store.init_db(settings.data_dir)
+    wiki_store.init_wiki(settings.data_dir)
     sync.pull()
     seed_demo_corpus()
+    seed_wiki()
 
 
 def configure(app: FastAPI) -> FastAPI:
@@ -44,6 +48,7 @@ def configure(app: FastAPI) -> FastAPI:
     app.include_router(chat_router.router)
     app.include_router(knowledge_router.router)
     app.include_router(knowledge_router.attachments_router)
+    app.include_router(wiki_router.router)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

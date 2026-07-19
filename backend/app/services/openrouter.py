@@ -72,6 +72,39 @@ async def stream_chat(
                     yield delta
 
 
+async def complete(model: str | None, messages: list[dict[str, str]]) -> str:
+    """Run a single non-streaming OpenRouter chat completion, returning the text."""
+    settings = get_settings()
+    payload = {
+        "model": model or settings.default_model,
+        "messages": messages,
+        "stream": False,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.openrouter_api_key}",
+        "HTTP-Referer": "https://dillguill.github.io/knowledge-assistant/",
+        "X-Title": "Knowledge Assistant",
+    }
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
+        resp = await client.post(
+            f"{settings.openrouter_base_url}/chat/completions",
+            json=payload,
+            headers=headers,
+        )
+    if resp.status_code == 429:
+        header = resp.headers.get("Retry-After", "")
+        raise RateLimitedError(int(header) if header.isdigit() else None)
+    if resp.status_code == 404:
+        raise ModelGoneError(payload["model"])
+    if resp.status_code >= 400:
+        raise UpstreamError(f"upstream status {resp.status_code}")
+    data = resp.json()
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise UpstreamError("malformed completion response") from exc
+
+
 def clear_model_cache() -> None:
     global _model_cache
     _model_cache = None

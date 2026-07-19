@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.config import get_settings
 from app.services import openrouter
 from app.services.context_builder import build_source_context
+from app.services.target_builder import build_target_context
 
 router = APIRouter()
 
@@ -22,6 +23,8 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1)
     collection_ids: list[int] = []
     attachment_ids: list[int] = []
+    wiki_page_ids: list[int] = []
+    target_page_id: int | None = None
 
 
 def _event(payload: dict) -> str:
@@ -30,15 +33,37 @@ def _event(payload: dict) -> str:
 
 async def _sse(request: ChatRequest) -> AsyncIterator[str]:
     messages = [m.model_dump() for m in request.messages]
-    if request.collection_ids or request.attachment_ids:
+
+    target_inserted = False
+    if request.target_page_id is not None:
+        try:
+            target_block, target = build_target_context(request.target_page_id)
+        except KeyError:
+            yield _event(
+                {
+                    "type": "error",
+                    "code": "unknown_target",
+                    "message": "Target page not found.",
+                }
+            )
+            yield "data: [DONE]\n\n"
+            return
+        yield _event({"type": "target", "target": target})
+        messages.insert(0, {"role": "system", "content": target_block})
+        target_inserted = True
+
+    if request.collection_ids or request.attachment_ids or request.wiki_page_ids:
         block, sources = build_source_context(
             request.collection_ids,
             request.attachment_ids,
+            request.wiki_page_ids,
             get_settings().context_char_budget,
         )
         if sources:
             yield _event({"type": "sources", "sources": sources})
-            messages.insert(0, {"role": "system", "content": block})
+            messages.insert(
+                1 if target_inserted else 0, {"role": "system", "content": block}
+            )
     try:
         async for delta in openrouter.stream_chat(
             model=request.model,

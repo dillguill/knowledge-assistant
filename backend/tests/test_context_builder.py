@@ -1,7 +1,7 @@
 import pytest
 
 from app.config import get_settings
-from app.db import store
+from app.db import store, wiki_store
 from app.services.context_builder import build_source_context
 
 
@@ -10,12 +10,13 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     get_settings.cache_clear()
     store.init_db(str(tmp_path))
+    wiki_store.init_wiki(str(tmp_path))
     yield
     get_settings.cache_clear()
 
 
 def test_empty_inputs_produce_no_context():
-    assert build_source_context([], [], 1000) == ("", [])
+    assert build_source_context([], [], [], 1000) == ("", [])
 
 
 def test_labels_and_material_in_order():
@@ -24,10 +25,10 @@ def test_labels_and_material_in_order():
                             "upload", b"x", "torque is 22 Nm")
     d2 = store.add_document(None, "bulletin.txt", "text/plain",
                             "attachment", b"y", "revised to 24 Nm")
-    block, sources = build_source_context([col["id"]], [d2["id"]], 1000)
+    block, sources = build_source_context([col["id"]], [d2["id"]], [], 1000)
     assert sources == [
-        {"id": d1["id"], "label": "S1", "filename": "manual.pdf"},
-        {"id": d2["id"], "label": "S2", "filename": "bulletin.txt"},
+        {"id": d1["id"], "label": "S1", "filename": "manual.pdf", "kind": "document"},
+        {"id": d2["id"], "label": "S2", "filename": "bulletin.txt", "kind": "document"},
     ]
     assert "[S1] manual.pdf" in block and "torque is 22 Nm" in block
     assert "[S2] bulletin.txt" in block and "revised to 24 Nm" in block
@@ -38,6 +39,47 @@ def test_budget_truncates_with_notice():
     col = store.create_collection("Big")
     store.add_document(col["id"], "big.txt", "text/plain",
                        "upload", b"x", "A" * 5000)
-    block, _ = build_source_context([col["id"]], [], 200)
+    block, _ = build_source_context([col["id"]], [], [], 200)
     assert len(block) < 1200  # rules + truncated material
     assert "truncated" in block.lower()
+
+
+def test_wiki_page_text_lands_in_block_with_label_and_title():
+    page = wiki_store.create_page("Torque Specs", None, "torque is 22 Nm", "owner")
+    block, sources = build_source_context([], [], [page["id"]], 1000)
+    assert sources == [
+        {"id": page["id"], "label": "S1", "filename": "Torque Specs",
+         "kind": "wiki", "slug": page["slug"]},
+    ]
+    assert "[S1] Torque Specs" in block and "torque is 22 Nm" in block
+
+
+def test_mixed_collections_attachments_wiki_ordering_stable():
+    col = store.create_collection("Garage")
+    d1 = store.add_document(col["id"], "manual.pdf", "application/pdf",
+                            "upload", b"x", "torque is 22 Nm")
+    d2 = store.add_document(None, "bulletin.txt", "text/plain",
+                            "attachment", b"y", "revised to 24 Nm")
+    page = wiki_store.create_page("Torque Specs", None, "wiki says 26 Nm", "owner")
+    block, sources = build_source_context([col["id"]], [d2["id"]], [page["id"]], 1000)
+    assert sources == [
+        {"id": d1["id"], "label": "S1", "filename": "manual.pdf", "kind": "document"},
+        {"id": d2["id"], "label": "S2", "filename": "bulletin.txt", "kind": "document"},
+        {"id": page["id"], "label": "S3", "filename": "Torque Specs",
+         "kind": "wiki", "slug": page["slug"]},
+    ]
+    assert "[S1] manual.pdf" in block
+    assert "[S2] bulletin.txt" in block
+    assert "[S3] Torque Specs" in block and "wiki says 26 Nm" in block
+
+
+def test_wiki_only_input_produces_context():
+    page = wiki_store.create_page("Solo Page", None, "solo content", "owner")
+    block, sources = build_source_context([], [], [page["id"]], 1000)
+    assert block != ""
+    assert len(sources) == 1
+
+
+def test_unknown_wiki_id_is_skipped():
+    block, sources = build_source_context([], [], [9999], 1000)
+    assert (block, sources) == ("", [])
