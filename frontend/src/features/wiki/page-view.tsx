@@ -8,6 +8,7 @@ import { WikiMarkdown, type WikiLinkResolver } from "./wiki-markdown";
 import { folderBreadcrumb, type WikiFolderTree } from "./tree";
 import { PageEditor } from "./page-editor";
 import { DeleteConfirmDialog, MoveDialog, RenameDialog } from "./wiki-dialogs";
+import { HistoryPanel } from "./history-panel";
 
 type PageDialog = null | "rename" | "move" | "delete";
 
@@ -47,6 +48,7 @@ export function WikiPageView({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<PageDialog>(null);
+  const [showHistory, setShowHistory] = useState(false);
   // Tracks which slug `draft` was last seeded for, so a background refresh
   // (e.g. after Save) never clobbers in-progress typing.
   const [loadedForSlug, setLoadedForSlug] = useState<string | null>(null);
@@ -57,6 +59,7 @@ export function WikiPageView({
     setNote("");
     setError(null);
     setDialog(null);
+    setShowHistory(false);
     setLoadedForSlug(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
@@ -158,20 +161,33 @@ export function WikiPageView({
               {authorKey && <> · {AUTHOR_LABEL[authorKey]}</>}
             </p>
           </div>
-          {isOwner && mode === "view" && (
+          {mode === "view" && (
             <div className="flex shrink-0 flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={handleEdit}>
-                Edit
+              {isOwner && (
+                <Button size="sm" variant="outline" onClick={handleEdit}>
+                  Edit
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant={showHistory ? "secondary" : "outline"}
+                onClick={() => setShowHistory((v) => !v)}
+              >
+                History
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setDialog("rename")}>
-                Rename
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setDialog("move")}>
-                Move
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => setDialog("delete")}>
-                Delete
-              </Button>
+              {isOwner && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => setDialog("rename")}>
+                    Rename
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setDialog("move")}>
+                    Move
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => setDialog("delete")}>
+                    Delete
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -180,6 +196,17 @@ export function WikiPageView({
           <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
+        )}
+
+        {mode === "view" && showHistory && (
+          <HistoryPanel
+            pageId={page.id}
+            currentContent={page.content}
+            resolve={resolve}
+            isOwner={isOwner}
+            onClose={() => setShowHistory(false)}
+            onRestored={refresh}
+          />
         )}
 
         {mode === "view" ? (
