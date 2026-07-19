@@ -295,6 +295,60 @@ async def test_list_proposals_filters_by_status_and_includes_current_content():
         assert existing_proposal["id"] in approved_ids
 
 
+def test_approve_rolls_back_existing_page_write_on_failure(monkeypatch):
+    page = wiki_store.create_page("Oil change", None, "v1", author="owner")
+    proposal = wiki_store.create_proposal(
+        page["id"], "Oil change", None, "v2 proposed", rationale="clarify torque",
+    )
+
+    original_tx = wiki_store._update_page_content_tx
+
+    def failing_update_tx(*args, **kwargs):
+        # Perform the real write (so it participates in approve_proposal's
+        # transaction), then blow up before the proposal status is flipped.
+        original_tx(*args, **kwargs)
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(wiki_store, "_update_page_content_tx", failing_update_tx)
+
+    with pytest.raises(RuntimeError):
+        wiki_store.approve_proposal(proposal["id"])
+
+    reloaded_proposal = wiki_store.get_proposal(proposal["id"])
+    assert reloaded_proposal["status"] == "pending"
+
+    reloaded_page = wiki_store.get_page(page["id"])
+    assert reloaded_page["content"] == "v1"
+
+    versions = wiki_store.list_versions(page["id"])
+    assert len(versions) == 1
+
+
+def test_approve_rolls_back_new_page_creation_on_failure(monkeypatch):
+    proposal = wiki_store.create_proposal(
+        None, "Brand New Page", None, "fresh content",
+    )
+
+    original_tx = wiki_store._create_page_tx
+
+    def failing_create_tx(*args, **kwargs):
+        # Perform the real insert (so it participates in approve_proposal's
+        # transaction), then blow up before the proposal status is flipped.
+        original_tx(*args, **kwargs)
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(wiki_store, "_create_page_tx", failing_create_tx)
+
+    with pytest.raises(RuntimeError):
+        wiki_store.approve_proposal(proposal["id"])
+
+    reloaded_proposal = wiki_store.get_proposal(proposal["id"])
+    assert reloaded_proposal["status"] == "pending"
+
+    pages = wiki_store.list_pages()
+    assert not any(p["title"] == "Brand New Page" for p in pages)
+
+
 async def test_proposal_title_and_content_length_limits():
     async with client() as c:
         r = await c.post(

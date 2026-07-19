@@ -207,28 +207,43 @@ def _page_dict(row: sqlite3.Row) -> dict:
     }
 
 
+def _create_page_tx(
+    conn: sqlite3.Connection,
+    title: str,
+    folder_id: int | None,
+    content: str,
+    author: str,
+) -> dict:
+    """Create a page, its first version, and its FTS entry on an open connection.
+
+    Caller owns the transaction (commit/rollback) via its own `with _connect()`
+    block; this helper only issues statements on the supplied connection.
+    """
+    slug = _unique_slug(conn, title)
+    cur = conn.execute(
+        """INSERT INTO wiki_pages (folder_id, title, slug, content)
+           VALUES (?, ?, ?, ?)""",
+        (folder_id, title, slug, content),
+    )
+    page_id = cur.lastrowid
+    conn.execute(
+        """INSERT INTO wiki_versions (page_id, content, author)
+           VALUES (?, ?, ?)""",
+        (page_id, content, author),
+    )
+    conn.execute(
+        "INSERT INTO wiki_pages_fts (rowid, title, content) VALUES (?, ?, ?)",
+        (page_id, title, content),
+    )
+    row = conn.execute(
+        "SELECT * FROM wiki_pages WHERE id = ?", (page_id,)
+    ).fetchone()
+    return _page_dict(row)
+
+
 def create_page(title: str, folder_id: int | None, content: str, author: str) -> dict:
     with _connect() as conn:
-        slug = _unique_slug(conn, title)
-        cur = conn.execute(
-            """INSERT INTO wiki_pages (folder_id, title, slug, content)
-               VALUES (?, ?, ?, ?)""",
-            (folder_id, title, slug, content),
-        )
-        page_id = cur.lastrowid
-        conn.execute(
-            """INSERT INTO wiki_versions (page_id, content, author)
-               VALUES (?, ?, ?)""",
-            (page_id, content, author),
-        )
-        conn.execute(
-            "INSERT INTO wiki_pages_fts (rowid, title, content) VALUES (?, ?, ?)",
-            (page_id, title, content),
-        )
-        row = conn.execute(
-            "SELECT * FROM wiki_pages WHERE id = ?", (page_id,)
-        ).fetchone()
-    return _page_dict(row)
+        return _create_page_tx(conn, title, folder_id, content, author)
 
 
 def get_page(page_id: int) -> dict | None:
@@ -269,6 +284,48 @@ def list_pages() -> list[dict]:
     ]
 
 
+def _update_page_content_tx(
+    conn: sqlite3.Connection,
+    page_id: int,
+    content: str,
+    author: str,
+    note: str = "",
+    citations: list | None = None,
+) -> dict:
+    """Append a version, update the page content, and resync FTS on an open connection.
+
+    Caller owns the transaction (commit/rollback) via its own `with _connect()`
+    block; this helper only issues statements on the supplied connection.
+    """
+    citations_json = json.dumps(citations or [])
+    conn.execute(
+        """INSERT INTO wiki_versions (page_id, content, author, note, citations)
+           VALUES (?, ?, ?, ?, ?)""",
+        (page_id, content, author, note, citations_json),
+    )
+    title_row = conn.execute(
+        "SELECT title FROM wiki_pages WHERE id = ?", (page_id,)
+    ).fetchone()
+    # FTS is an external-content table: delete the old index entry
+    # *before* mutating the backing row, since the DELETE looks up the
+    # current backing row to know which terms to remove.
+    conn.execute("DELETE FROM wiki_pages_fts WHERE rowid = ?", (page_id,))
+    conn.execute(
+        """UPDATE wiki_pages
+           SET content = ?, updated_at = datetime('now')
+           WHERE id = ?""",
+        (content, page_id),
+    )
+    conn.execute(
+        "INSERT INTO wiki_pages_fts (rowid, title, content) VALUES (?, ?, ?)",
+        (page_id, title_row["title"], content),
+    )
+    row = conn.execute(
+        "SELECT * FROM wiki_pages WHERE id = ?", (page_id,)
+    ).fetchone()
+    return _page_dict(row)
+
+
 def update_page_content(
     page_id: int,
     content: str,
@@ -276,34 +333,8 @@ def update_page_content(
     note: str = "",
     citations: list | None = None,
 ) -> dict:
-    citations_json = json.dumps(citations or [])
     with _connect() as conn:
-        conn.execute(
-            """INSERT INTO wiki_versions (page_id, content, author, note, citations)
-               VALUES (?, ?, ?, ?, ?)""",
-            (page_id, content, author, note, citations_json),
-        )
-        title_row = conn.execute(
-            "SELECT title FROM wiki_pages WHERE id = ?", (page_id,)
-        ).fetchone()
-        # FTS is an external-content table: delete the old index entry
-        # *before* mutating the backing row, since the DELETE looks up the
-        # current backing row to know which terms to remove.
-        conn.execute("DELETE FROM wiki_pages_fts WHERE rowid = ?", (page_id,))
-        conn.execute(
-            """UPDATE wiki_pages
-               SET content = ?, updated_at = datetime('now')
-               WHERE id = ?""",
-            (content, page_id),
-        )
-        conn.execute(
-            "INSERT INTO wiki_pages_fts (rowid, title, content) VALUES (?, ?, ?)",
-            (page_id, title_row["title"], content),
-        )
-        row = conn.execute(
-            "SELECT * FROM wiki_pages WHERE id = ?", (page_id,)
-        ).fetchone()
-    return _page_dict(row)
+        return _update_page_content_tx(conn, page_id, content, author, note, citations)
 
 
 def rename_page(page_id: int, title: str) -> None:
@@ -444,29 +475,35 @@ def list_proposals(status: str | None = None) -> list[dict]:
 
 
 def approve_proposal(proposal_id: int) -> dict:
-    proposal = get_proposal(proposal_id)
-    if proposal is None:
-        raise ValueError("Proposal not found")
-    if proposal["status"] != "pending":
-        raise ValueError("Proposal is not pending")
-
-    if proposal["page_id"] is None:
-        page = create_page(
-            proposal["title"], proposal["folder_id"], proposal["content"],
-            author="assistant",
-        )
-    else:
-        # page_id, when set, is guaranteed to reference a live page: the
-        # schema's ON DELETE CASCADE removes a proposal the moment its
-        # target page is deleted, so a fetchable proposal with a non-null
-        # page_id always has a live page behind it.
-        page = update_page_content(
-            proposal["page_id"], proposal["content"], author="assistant",
-            note=f"approved proposal #{proposal_id}",
-            citations=proposal["citations"],
-        )
-
+    # Single transaction: fetch + validate the proposal, write the page/version
+    # content, and flip the proposal's status all on one connection, so any
+    # failure before commit rolls back the entire approval atomically.
     with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM wiki_proposals WHERE id = ?", (proposal_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError("Proposal not found")
+        proposal = _proposal_dict(row)
+        if proposal["status"] != "pending":
+            raise ValueError("Proposal is not pending")
+
+        if proposal["page_id"] is None:
+            page = _create_page_tx(
+                conn, proposal["title"], proposal["folder_id"], proposal["content"],
+                author="assistant",
+            )
+        else:
+            # page_id, when set, is guaranteed to reference a live page: the
+            # schema's ON DELETE CASCADE removes a proposal the moment its
+            # target page is deleted, so a fetchable proposal with a non-null
+            # page_id always has a live page behind it.
+            page = _update_page_content_tx(
+                conn, proposal["page_id"], proposal["content"], author="assistant",
+                note=f"approved proposal #{proposal_id}",
+                citations=proposal["citations"],
+            )
+
         conn.execute(
             """UPDATE wiki_proposals
                SET status = 'approved', decided_at = datetime('now')
