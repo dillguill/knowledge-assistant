@@ -266,6 +266,33 @@ async def test_patch_folder_with_unknown_parent_id_is_404():
         assert r.status_code == 404
 
 
+async def test_delete_folder_referenced_by_decided_proposal_succeeds_and_nulls_fk():
+    # A decided (rejected/approved) proposal that references a folder must
+    # not permanently block deletion of an otherwise-empty folder: the FK
+    # is ON DELETE SET NULL, and the router also catches IntegrityError as
+    # a belt-and-braces 409 rather than letting sqlite3 raise a 500.
+    async with client() as c:
+        folder = (await c.post(
+            "/api/wiki/folders", json={"name": "Garage", "parent_id": None},
+            headers=OWNER,
+        )).json()
+
+        proposal = (await c.post(
+            "/api/wiki/proposals",
+            json={"title": "New page", "folder_id": folder["id"], "content": "x"},
+        )).json()
+
+        await c.post(f"/api/wiki/proposals/{proposal['id']}/reject", headers=OWNER)
+
+        r = await c.delete(f"/api/wiki/folders/{folder['id']}", headers=OWNER)
+        assert r.status_code == 204
+
+        proposals = (await c.get("/api/wiki/proposals")).json()["proposals"]
+        reloaded = next(p for p in proposals if p["id"] == proposal["id"])
+        assert reloaded["folder_id"] is None
+        assert reloaded["status"] == "rejected"
+
+
 async def test_duplicate_folder_name_still_409_after_parent_check():
     async with client() as c:
         parent = (await c.post(

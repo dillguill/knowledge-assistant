@@ -99,7 +99,10 @@ async def complete(model: str | None, messages: list[dict[str, str]]) -> str:
     if resp.status_code >= 400:
         raise UpstreamError(f"upstream status {resp.status_code}")
     data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise UpstreamError("malformed completion response") from exc
 
 
 def clear_model_cache() -> None:

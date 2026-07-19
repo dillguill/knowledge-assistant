@@ -56,7 +56,7 @@ of.
 
 
 def seed_wiki() -> None:
-    if wiki_store.list_pages():
+    if wiki_store.list_pages() or wiki_store.list_folders():
         return
     folder = wiki_store.create_folder("Guides", None)
     wiki_store.create_page(

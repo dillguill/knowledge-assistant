@@ -40,3 +40,19 @@ def test_skips_entirely_when_a_page_already_exists():
 
     assert wiki_store.list_folders() == []
     assert [p["title"] for p in wiki_store.list_pages()] == ["Existing Page"]
+
+
+def test_skips_without_crashing_when_a_folder_exists_but_no_pages():
+    # Reproduces: owner deleted the welcome page (or a proposal created a
+    # folder that never became a page), leaving a "Guides"-named folder
+    # around with zero pages. seed_wiki() must not try to create another
+    # "Guides" folder in that state — that UNIQUE(parent_id, name) collision
+    # would raise sqlite3.IntegrityError out of _startup() and the app would
+    # never boot.
+    wiki_store.create_folder("Guides", None)
+
+    seed_wiki()
+
+    folders = wiki_store.list_folders()
+    assert [f["name"] for f in folders] == ["Guides"]
+    assert wiki_store.list_pages() == []

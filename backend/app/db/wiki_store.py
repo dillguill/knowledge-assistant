@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS wiki_proposals (
     id INTEGER PRIMARY KEY,
     page_id INTEGER REFERENCES wiki_pages(id) ON DELETE CASCADE,  -- NULL = new page
     title TEXT NOT NULL,
-    folder_id INTEGER REFERENCES wiki_folders(id),
+    folder_id INTEGER REFERENCES wiki_folders(id) ON DELETE SET NULL,
     base_version_id INTEGER REFERENCES wiki_versions(id),
     content TEXT NOT NULL,
     rationale TEXT NOT NULL DEFAULT '',

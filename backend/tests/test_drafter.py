@@ -241,3 +241,90 @@ async def test_draft_upstream_5xx_returns_502(tmp_path, monkeypatch):
         )
     assert resp.status_code == 502
     get_settings.cache_clear()
+
+
+@respx.mock
+async def test_draft_rate_limited_returns_429_not_502(tmp_path, monkeypatch):
+    # RateLimitedError subclasses UpstreamError, so a naive `except
+    # UpstreamError` catch flattens a 429 into a generic 502 and the owner
+    # reads free-model rate limiting as an outage. Must map distinctly,
+    # like chat.py does.
+    await env(tmp_path, monkeypatch)
+    respx.post(UPSTREAM).respond(
+        status_code=429, headers={"Retry-After": "52"}, json={"error": "slow down"}
+    )
+    async with client() as c:
+        resp = await c.post(
+            "/api/wiki/draft",
+            json={"instruction": "Draft a page"},
+            headers=OWNER,
+        )
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert detail["code"] == "rate_limited"
+    assert detail["retry_after"] == 52
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_draft_rate_limited_without_retry_after_omits_it(tmp_path, monkeypatch):
+    await env(tmp_path, monkeypatch)
+    respx.post(UPSTREAM).respond(status_code=429, json={"error": "slow down"})
+    async with client() as c:
+        resp = await c.post(
+            "/api/wiki/draft",
+            json={"instruction": "Draft a page"},
+            headers=OWNER,
+        )
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert detail["code"] == "rate_limited"
+    assert "retry_after" not in detail
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_draft_model_gone_returns_distinct_mapping_matching_chat(
+    tmp_path, monkeypatch
+):
+    # Parity with chat.py's model_gone handling: a distinct code and a
+    # message naming the unavailable model, rather than the generic
+    # "upstream_error" message used for other UpstreamError cases.
+    await env(tmp_path, monkeypatch)
+    respx.post(UPSTREAM).respond(status_code=404, json={"error": "no such model"})
+    async with client() as c:
+        resp = await c.post(
+            "/api/wiki/draft",
+            json={"instruction": "Draft a page", "model": "gone/model:free"},
+            headers=OWNER,
+        )
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert detail["code"] == "model_gone"
+    assert "gone/model:free" in detail["message"]
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_draft_malformed_200_returns_502_not_404_and_creates_no_proposal(
+    tmp_path, monkeypatch
+):
+    # A malformed-but-200 upstream response raises KeyError/IndexError deep
+    # inside openrouter.complete(). The draft handler's `except KeyError`
+    # (meant for an unknown page_id) must not swallow that and mismap it
+    # to a 404 "Unknown page."
+    await env(tmp_path, monkeypatch)
+    respx.post(UPSTREAM).respond(json={"choices": []})
+    async with client() as c:
+        resp = await c.post(
+            "/api/wiki/draft",
+            json={"instruction": "Draft a page"},
+            headers=OWNER,
+        )
+    assert resp.status_code == 502
+    assert resp.json()["detail"]["code"] == "upstream_error"
+
+    async with client() as c:
+        proposals = (await c.get("/api/wiki/proposals")).json()["proposals"]
+    assert proposals == []
+    get_settings.cache_clear()

@@ -119,6 +119,8 @@ async def delete_folder(folder_id: int) -> None:
         wiki_store.delete_folder(folder_id)
     except ValueError:
         raise HTTPException(409, "Folder is not empty.")
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "Folder cannot be deleted right now.")
     sync.schedule_push()
 
 
@@ -237,6 +239,20 @@ async def draft_page(body: DraftRequest) -> dict:
             502,
             {"code": "draft_failed",
              "message": "The model did not return a usable draft."},
+        )
+    except openrouter.RateLimitedError as exc:
+        detail: dict = {
+            "code": "rate_limited",
+            "message": "Free-tier rate limit hit — wait a moment and retry.",
+        }
+        if exc.retry_after is not None:
+            detail["retry_after"] = exc.retry_after
+        raise HTTPException(429, detail)
+    except openrouter.ModelGoneError as exc:
+        raise HTTPException(
+            502,
+            {"code": "model_gone",
+             "message": f"The model {exc.model} is no longer available."},
         )
     except openrouter.UpstreamError:
         raise HTTPException(
