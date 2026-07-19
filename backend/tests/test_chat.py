@@ -140,8 +140,45 @@ async def test_chat_with_sources_emits_sources_event_and_context(tmp_path, monke
     first = json.loads(events[0])
     assert first["type"] == "sources"
     assert first["sources"] == [
-        {"id": doc["id"], "label": "S1", "filename": "manual.txt"}]
+        {"id": doc["id"], "label": "S1", "filename": "manual.txt", "kind": "document"}]
     sent = json.loads(route.calls[0].request.content)
     assert sent["messages"][0]["role"] == "system"
     assert "torque is 22 Nm" in sent["messages"][0]["content"]
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_chat_with_only_wiki_pages_emits_sources_event_and_context(
+    tmp_path, monkeypatch
+):
+    from app.config import get_settings
+    from app.db import store, wiki_store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+    wiki_store.init_wiki(str(tmp_path))
+    page = wiki_store.create_page(
+        "Torque Specs", None, "wiki torque is 26 Nm", "owner"
+    )
+
+    route = respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "torque?"}],
+            "wiki_page_ids": [page["id"]],
+        })
+    events = parse_events(resp.text)
+    first = json.loads(events[0])
+    assert first["type"] == "sources"
+    assert first["sources"] == [
+        {"id": page["id"], "label": "S1", "filename": "Torque Specs",
+         "kind": "wiki", "slug": page["slug"]}]
+    sent = json.loads(route.calls[0].request.content)
+    assert sent["messages"][0]["role"] == "system"
+    assert "wiki torque is 26 Nm" in sent["messages"][0]["content"]
     get_settings.cache_clear()

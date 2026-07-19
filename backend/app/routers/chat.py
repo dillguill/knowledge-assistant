@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1)
     collection_ids: list[int] = []
     attachment_ids: list[int] = []
+    wiki_page_ids: list[int] = []
 
 
 def _event(payload: dict) -> str:
@@ -30,10 +31,11 @@ def _event(payload: dict) -> str:
 
 async def _sse(request: ChatRequest) -> AsyncIterator[str]:
     messages = [m.model_dump() for m in request.messages]
-    if request.collection_ids or request.attachment_ids:
+    if request.collection_ids or request.attachment_ids or request.wiki_page_ids:
         block, sources = build_source_context(
             request.collection_ids,
             request.attachment_ids,
+            request.wiki_page_ids,
             get_settings().context_char_budget,
         )
         if sources:
