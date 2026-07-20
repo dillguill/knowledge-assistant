@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { requestChatView } from "@/app/chat-navigation";
 import {
   AuiIf,
   ThreadListItemMorePrimitive,
@@ -273,6 +274,7 @@ export const ThreadListItem: FC = () => {
       <ThreadListItemPrimitive.Trigger
         data-slot="aui_thread-list-item-trigger"
         className="focus-visible:ring-sidebar-ring/50 flex h-full min-w-0 flex-1 items-center rounded-md px-2.5 text-start text-sm outline-none group-hover:pe-9 group-has-focus-visible:pe-9 group-has-data-[state=open]:pe-9 group-data-active:pe-9 focus-visible:ring-[3px]"
+        onClick={() => requestChatView()}
       >
         <span
           data-slot="aui_thread-list-item-title"
