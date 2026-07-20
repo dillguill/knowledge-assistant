@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/app/shell";
+import { onWikiNavigationRequest } from "@/app/wiki-navigation";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatPage } from "@/features/chat/chat-page";
@@ -8,16 +9,29 @@ import { TopbarStatus } from "@/features/chat/topbar-status";
 import { DocumentsPage } from "@/features/knowledge/documents-page";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { SettingsProvider } from "@/features/settings/settings-provider";
+import { WikiPage } from "@/features/wiki/wiki-page";
 
-type View = "chat" | "settings" | "documents";
+type View = "chat" | "settings" | "documents" | "wiki";
 const TITLES: Record<View, string> = {
   chat: "Chat",
   settings: "Settings",
   documents: "Documents",
+  wiki: "Wiki",
 };
 
 function App() {
   const [view, setView] = useState<View>("chat");
+  const [wikiOpenSlug, setWikiOpenSlug] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      onWikiNavigationRequest(({ slug }) => {
+        setView("wiki");
+        setWikiOpenSlug(slug);
+      }),
+    [],
+  );
+
   return (
     <SettingsProvider>
       {/* assistant-ui's attachment tiles render a raw Radix Tooltip, so the app
@@ -30,7 +44,12 @@ function App() {
             title={TITLES[view]}
             active={view}
             onNavigate={(id) => {
-              if (id === "chat" || id === "settings" || id === "documents")
+              if (
+                id === "chat" ||
+                id === "settings" ||
+                id === "documents" ||
+                id === "wiki"
+              )
                 setView(id);
             }}
           >
@@ -40,6 +59,12 @@ function App() {
             </div>
             {view === "settings" && <SettingsPage />}
             {view === "documents" && <DocumentsPage />}
+            {view === "wiki" && (
+              <WikiPage
+                openSlug={wikiOpenSlug}
+                onOpened={() => setWikiOpenSlug(null)}
+              />
+            )}
           </AppShell>
         </ChatProvider>
       </TooltipProvider>

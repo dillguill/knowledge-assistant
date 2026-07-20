@@ -24,6 +24,22 @@ if (typeof globalThis.localStorage === "undefined" || !globalThis.localStorage) 
     configurable: true,
   });
 }
+// CodeMirror (wiki editor) measures text via Range.getClientRects/getBoundingClientRect,
+// neither of which jsdom implements.
+Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
+Range.prototype.getBoundingClientRect ??= () =>
+  ({
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: 0,
+    height: 0,
+    x: 0,
+    y: 0,
+    toJSON() {},
+  }) as DOMRect;
+
 window.matchMedia ??= ((query: string) => ({
   matches: false,
   media: query,

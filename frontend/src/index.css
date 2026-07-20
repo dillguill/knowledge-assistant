@@ -139,3 +139,27 @@
 @custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));
 
 @custom-variant data-closed (&:where([data-state="closed"], [data-closed]:not([data-closed="false"])));
+
+/* Wiki page export-to-PDF: "Export PDF" in page-view.tsx calls
+ * window.print(). Hide the app shell (sidebar `aside`, topbar `header`) and
+ * anything marked `.no-print` (breadcrumb, action buttons, the history
+ * panel) so only the rendered page prints. The shell's scrollable
+ * containers (`main`, `.wiki-print-area` — the wiki route's own
+ * `overflow-y-auto` wrapper) clip to viewport height on screen, which would
+ * truncate a printed page taller than one screen, so those get reset to
+ * `auto` for print. */
+@media print {
+  aside,
+  header,
+  .no-print {
+    display: none !important;
+  }
+  html,
+  body,
+  #root,
+  main,
+  .wiki-print-area {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}

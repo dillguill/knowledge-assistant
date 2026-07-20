@@ -157,11 +157,95 @@ test("includes collection ids in the request body when selected", async () => {
   const adapter = createApiAdapter("https://api.test", () => null, () => ({
     collectionIds: [1, 2],
     attachmentIds: [],
+    wikiPageIds: [],
   }));
   await drain(run(adapter));
   const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
   expect(body.collection_ids).toEqual([1, 2]);
   expect(body.attachment_ids).toBeUndefined();
+  vi.unstubAllGlobals();
+});
+
+test("includes wiki page ids in the request body when selected", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter("https://api.test", () => null, () => ({
+    collectionIds: [],
+    attachmentIds: [],
+    wikiPageIds: [7, 8],
+  }));
+  await drain(run(adapter));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.wiki_page_ids).toEqual([7, 8]);
+  vi.unstubAllGlobals();
+});
+
+test("includes target_page_id in the request body when a target is set", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter(
+    "https://api.test",
+    () => null,
+    () => ({ collectionIds: [], attachmentIds: [], wikiPageIds: [] }),
+    () => 9,
+  );
+  await drain(run(adapter));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.target_page_id).toBe(9);
+  vi.unstubAllGlobals();
+});
+
+test("a page picked as the target is never also sent inside wiki_page_ids", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter(
+    "https://api.test",
+    () => null,
+    () => ({ collectionIds: [], attachmentIds: [], wikiPageIds: [5, 9] }),
+    () => 9,
+  );
+  await drain(run(adapter));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.target_page_id).toBe(9);
+  expect(body.wiki_page_ids).toEqual([5]);
+  vi.unstubAllGlobals();
+});
+
+test("a target SSE event invokes the onTarget callback and isn't treated as text", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      sseResponse([
+        JSON.stringify({
+          type: "target",
+          target: { page_id: 4, title: "Setup", slug: "setup" },
+        }),
+        JSON.stringify({ type: "text-delta", text: "ok" }),
+        "[DONE]",
+      ]),
+    ),
+  );
+  const onTarget = vi.fn();
+  const adapter = createApiAdapter(
+    "https://api.test",
+    () => null,
+    () => ({ collectionIds: [], attachmentIds: [], wikiPageIds: [] }),
+    () => 4,
+    onTarget,
+  );
+  let finalText = "";
+  for await (const chunk of run(adapter)) {
+    const part = chunk.content[0];
+    if (part?.type === "text" && part.text) finalText = part.text;
+  }
+  expect(finalText).toBe("ok");
+  expect(onTarget).toHaveBeenCalledWith({ page_id: 4, title: "Setup", slug: "setup" });
   vi.unstubAllGlobals();
 });
 
@@ -182,6 +266,7 @@ test("sources event becomes source content parts", async () => {
   const adapter = createApiAdapter("https://api.test", () => null, () => ({
     collectionIds: [1],
     attachmentIds: [],
+    wikiPageIds: [],
   }));
   type Chunk = { content: readonly { type: string; title?: string }[] };
   let last: Chunk | null = null;
@@ -189,6 +274,42 @@ test("sources event becomes source content parts", async () => {
   const sourceParts = last!.content.filter((p) => p.type === "source");
   expect(sourceParts).toHaveLength(1);
   expect(sourceParts[0].title).toBe("[S1] manual.pdf");
+  vi.unstubAllGlobals();
+});
+
+test("a wiki-kind source becomes an internal /wiki/page/ url, and rides along on the message metadata for citation reuse", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      sseResponse([
+        JSON.stringify({
+          type: "sources",
+          sources: [
+            { id: 4, label: "S1", filename: "Setup", kind: "wiki", slug: "setup" },
+          ],
+        }),
+        JSON.stringify({ type: "text-delta", text: "see [S1]" }),
+        "[DONE]",
+      ]),
+    ),
+  );
+  const adapter = createApiAdapter("https://api.test", () => null, () => ({
+    collectionIds: [],
+    attachmentIds: [],
+    wikiPageIds: [4],
+  }));
+  type Chunk = {
+    content: readonly { type: string; url?: string; kind?: string }[];
+    metadata?: { custom?: { citationSources?: unknown[] } };
+  };
+  let last: Chunk | null = null;
+  for await (const chunk of run(adapter)) last = chunk as unknown as Chunk;
+  const sourceParts = last!.content.filter((p) => p.type === "source");
+  expect(sourceParts[0]?.url).toBe("/wiki/page/setup");
+  expect(sourceParts[0]?.kind).toBe("wiki");
+  expect(last!.metadata?.custom?.citationSources).toEqual([
+    { id: 4, label: "S1", filename: "Setup", kind: "wiki", slug: "setup" },
+  ]);
   vi.unstubAllGlobals();
 });
 

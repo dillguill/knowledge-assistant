@@ -1,10 +1,19 @@
 import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
 
-type Source = { id: number; label: string; filename: string };
+type Source = {
+  id: number;
+  label: string;
+  filename: string;
+  kind?: "document" | "wiki";
+  slug?: string;
+};
+
+export type ChatTarget = { page_id: number; title: string; slug: string };
 
 type SseEvent =
   | { type: "text-delta"; text: string }
   | { type: "sources"; sources: Source[] }
+  | { type: "target"; target: ChatTarget }
   | { type: "error"; code: string; message: string; retry_after?: number };
 
 export class ChatError extends Error {
@@ -72,11 +81,16 @@ async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<SseEv
   }
 }
 
-export type SourceConfig = { collectionIds: number[]; attachmentIds: number[] };
+export type SourceConfig = {
+  collectionIds: number[];
+  attachmentIds: number[];
+  wikiPageIds: number[];
+};
 
 const NO_SOURCES: () => SourceConfig = () => ({
   collectionIds: [],
   attachmentIds: [],
+  wikiPageIds: [],
 });
 
 /** Streams chat completions from the Knowledge Assistant backend. */
@@ -84,6 +98,8 @@ export function createApiAdapter(
   baseUrl: string,
   getModel: () => string | null,
   getSourceConfig: () => SourceConfig = NO_SOURCES,
+  getTargetPageId: () => number | null = () => null,
+  onTarget?: (target: ChatTarget) => void,
 ): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal, context }) {
@@ -92,6 +108,7 @@ export function createApiAdapter(
         apiMessages.unshift({ role: "system", content: context.system });
       }
       const source = getSourceConfig();
+      const targetPageId = getTargetPageId();
       const attachmentIds = [
         ...messages
           .flatMap((m) => m.attachments ?? [])
@@ -99,12 +116,19 @@ export function createApiAdapter(
           .filter(Number.isFinite),
         ...source.attachmentIds,
       ];
+      // A page picked as the Target must never also ride along as a plain
+      // wiki source — the backend already pins its full content via
+      // target_page_id, so including it in wiki_page_ids too would just
+      // duplicate it in the source-context block.
+      const wikiPageIds = source.wikiPageIds.filter((id) => id !== targetPageId);
       const body: Record<string, unknown> = {
         model: getModel(),
         messages: apiMessages,
       };
       if (source.collectionIds.length) body.collection_ids = source.collectionIds;
       if (attachmentIds.length) body.attachment_ids = attachmentIds;
+      if (wikiPageIds.length) body.wiki_page_ids = wikiPageIds;
+      if (targetPageId !== null) body.target_page_id = targetPageId;
       const response = await fetch(`${baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -121,8 +145,13 @@ export function createApiAdapter(
           type: "source" as const,
           sourceType: "url" as const,
           id: String(s.id),
-          url: `${baseUrl}/api/knowledge/files/${s.id}/raw`,
+          url:
+            s.kind === "wiki" && s.slug
+              ? `/wiki/page/${s.slug}`
+              : `${baseUrl}/api/knowledge/files/${s.id}/raw`,
           title: `[${s.label}] ${s.filename}`,
+          kind: s.kind ?? "document",
+          slug: s.slug,
         }));
       for await (const event of parseSse(response.body)) {
         if (event.type === "error") {
@@ -132,10 +161,19 @@ export function createApiAdapter(
             event.retry_after,
           );
         }
+        if (event.type === "target") {
+          onTarget?.(event.target);
+        }
         if (event.type === "sources") sources = event.sources;
         if (event.type === "text-delta") {
           text += event.text;
-          yield { content: [{ type: "text" as const, text }, ...sourceParts()] };
+          yield {
+            content: [{ type: "text" as const, text }, ...sourceParts()],
+            // Carried on the message so a `wiki-update` proposal card
+            // (Task 16) can reuse this exact list as its citations, per the
+            // "citations = the message's sources event payload" rule.
+            metadata: { custom: { citationSources: sources } },
+          };
         }
       }
     },

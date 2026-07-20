@@ -27,9 +27,9 @@ test("sidebar shows the product name and all nav sections", () => {
   }
 });
 
-test("Chat, Documents, and Settings are real destinations; the rest are marked planned", () => {
+test("Chat, Wiki, Documents, and Settings are real destinations; the rest are marked planned", () => {
   renderShell(<div />);
-  expect(screen.getAllByText("planned")).toHaveLength(3);
+  expect(screen.getAllByText("planned")).toHaveLength(2);
 });
 
 test("renders its children in the main area", () => {
