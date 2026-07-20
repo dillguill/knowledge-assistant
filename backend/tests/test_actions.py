@@ -31,17 +31,16 @@ def test_parse_wiki_create_page():
     assert actions[0]["data"]["content"] == "## Books\n- 1984"
 
 
-def test_parse_wiki_update():
+def test_parse_ignores_wiki_update():
+    # `wiki-update` fences carry full-page markdown (target/edit flow) and are
+    # handled by the frontend proposal card, not parsed as a JSON tool action.
     text = (
-        'Here is a proposal.\n\n'
-        '```wiki-update\n'
-        '{"page_id": null, "title": "New Page", "content": "content here"}\n'
-        '```'
+        "Here is the updated page.\n\n"
+        "```wiki-update\n"
+        "# New Page\n\nSome **markdown** content, not JSON.\n"
+        "```"
     )
-    actions = parse_actions(text)
-    assert len(actions) == 1
-    assert actions[0]["action"] == "wiki-update"
-    assert actions[0]["data"]["title"] == "New Page"
+    assert parse_actions(text) == []
 
 
 def test_parse_collection_create():
@@ -152,23 +151,14 @@ def test_execute_wiki_create_page_success(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
 
-def test_execute_wiki_update_creates_proposal(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    from app.config import get_settings
-    get_settings.cache_clear()
-    from app.db import store, wiki_store
-    store.init_db(str(tmp_path))
-    wiki_store.init_wiki(str(tmp_path))
-
-    action = {"action": "wiki-update", "data": {"page_id": None, "title": "Proposal", "content": "content"}}
-    result = execute_action(action)
-    assert "error" not in result
-    assert result["result"]["title"] == "Proposal"
-
-    proposals = wiki_store.list_proposals()
-    assert len(proposals) == 1
-    assert proposals[0]["title"] == "Proposal"
-    get_settings.cache_clear()
+def test_execute_wiki_update_is_not_a_tool_action():
+    # wiki-update proposals go through the frontend markdown diff card, not a
+    # backend JSON tool action.
+    result = execute_action(
+        {"action": "wiki-update", "data": {"title": "Proposal", "content": "x"}}
+    )
+    assert "error" in result
+    assert "Unknown action" in result["error"]
 
 
 def test_execute_collection_create_requires_owner(tmp_path, monkeypatch):
@@ -220,10 +210,14 @@ def test_execute_action_with_preexisting_error():
 # --- SYSTEM_PROMPT ---
 
 
-def test_system_prompt_mentions_all_tools():
+def test_system_prompt_mentions_create_tools():
     assert "wiki-create-page" in SYSTEM_PROMPT
-    assert "wiki-update" in SYSTEM_PROMPT
     assert "collection-create" in SYSTEM_PROMPT
+
+
+def test_system_prompt_has_no_wiki_update_json_tool():
+    # wiki-update is markdown handled by the edit/proposal flow, not a JSON tool.
+    assert "```wiki-update" not in SYSTEM_PROMPT
 
 
 def test_system_prompt_has_json_examples():

@@ -316,7 +316,8 @@ async def test_tools_enabled_injects_system_prompt(tmp_path, monkeypatch):
     prompt = sent["messages"][0]["content"]
     assert "wiki-create-page" in prompt
     assert "collection-create" in prompt
-    assert "wiki-update" in prompt
+    # wiki-update is markdown handled by the edit/proposal flow, not a JSON tool.
+    assert "```wiki-update" not in prompt
     get_settings.cache_clear()
 
 

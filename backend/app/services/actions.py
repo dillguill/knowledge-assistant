@@ -21,8 +21,8 @@ FENCE_COLLECTION_CREATE = re.compile(
 ALL_FENCES = [FENCE_WIKI_CREATE_PAGE, FENCE_WIKI_UPDATE, FENCE_COLLECTION_CREATE]
 
 SYSTEM_PROMPT = """\
-You have tools to create and modify wiki pages and collections. \
-When the user asks you to create or modify content, include a fenced code block \
+You have tools to create new wiki pages and collections. \
+When the user asks you to create content, include a fenced code block \
 with the appropriate tool format in your response. Only use these tools when \
 the user explicitly asks.
 
@@ -31,17 +31,14 @@ Tool: wiki-create-page — creates a new wiki page immediately (owner only)
 {"title": "Page Title", "content": "Full page markdown", "folder_id": null}
 ```
 
-Tool: wiki-update — creates a proposal to create or change a wiki page (anyone)
-```wiki-update
-{"page_id": null, "title": "Page Title", "content": "Full page markdown", "folder_id": null}
-```
-
 Tool: collection-create — creates a new collection for documents (owner only)
 ```collection-create
 {"name": "Collection Name"}
 ```
 
-Place the fence in your response alongside any explanatory text.\
+Place the fence in your response alongside any explanatory text. To edit an \
+existing page, do not use these tools — follow the editing instructions given \
+when a page is pinned for editing.\
 """
 
 
@@ -63,9 +60,11 @@ def _strip_fences(text: str) -> str:
 def parse_actions(text: str) -> list[dict]:
     tagged: list[tuple[int, dict]] = []
 
+    # `wiki-update` is deliberately NOT parsed here: it carries full-page
+    # markdown (target/edit flow) rendered by the frontend proposal card, not
+    # JSON — see target_builder.FENCE_INSTRUCTION.
     for pattern, action_name in [
         (FENCE_WIKI_CREATE_PAGE, "wiki-create-page"),
-        (FENCE_WIKI_UPDATE, "wiki-update"),
         (FENCE_COLLECTION_CREATE, "collection-create"),
     ]:
         for match in pattern.finditer(text):
@@ -104,23 +103,6 @@ def execute_action(action: dict, owner_token: str = "") -> dict:
             }
         except Exception as exc:
             log.warning("wiki-create-page failed: %s", exc)
-            return {"action": action_type, "error": str(exc)}
-
-    if action_type == "wiki-update":
-        page_id = data.get("page_id")
-        title = data.get("title", "Untitled")
-        content = data.get("content", "")
-        folder_id = data.get("folder_id")
-        try:
-            proposal = wiki_store.create_proposal(
-                page_id, title, folder_id, content, rationale="Created via chat"
-            )
-            return {
-                "action": action_type,
-                "result": {"proposal_id": proposal["id"], "title": proposal["title"]},
-            }
-        except Exception as exc:
-            log.warning("wiki-update failed: %s", exc)
             return {"action": action_type, "error": str(exc)}
 
     if action_type == "collection-create":
