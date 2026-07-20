@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "@/app/shell";
+import { onChatViewRequest } from "@/app/chat-navigation";
 import { onWikiNavigationRequest } from "@/app/wiki-navigation";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -31,6 +32,8 @@ function App() {
       }),
     [],
   );
+
+  useEffect(() => onChatViewRequest(() => setView("chat")), []);
 
   return (
     <SettingsProvider>

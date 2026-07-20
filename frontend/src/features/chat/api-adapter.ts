@@ -1,5 +1,6 @@
 import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
 import { loadSettings } from "../settings/settings-storage";
+import { requestWikiPage } from "@/app/wiki-navigation";
 
 type Source = {
   id: number;
@@ -172,6 +173,13 @@ export function createApiAdapter(
           onTarget?.(event.target);
         }
         if (event.type === "sources") sources = event.sources;
+        if (
+          event.type === "action" &&
+          event.action === "wiki-create-page" &&
+          event.result?.slug
+        ) {
+          requestWikiPage(String(event.result.slug));
+        }
         if (event.type === "text-delta") {
           text += event.text;
           yield {

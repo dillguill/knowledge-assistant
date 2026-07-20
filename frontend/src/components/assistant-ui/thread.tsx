@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { CitationChip } from "@/features/chat/citation-chip";
 import { ComposerModelSelect } from "@/features/chat/composer-model-select";
 import { WikiUpdateAwareText } from "@/features/chat/proposal-card";
-import { SourceSelector } from "@/features/chat/source-selector";
+import { useSourceMentions } from "@/features/chat/use-source-mentions";
 import { cn } from "@/lib/utils";
 import {
   ActionBarMorePrimitive,
@@ -39,11 +39,16 @@ import {
   SuggestionPrimitive,
   ThreadPrimitive,
   type ToolCallMessagePartComponent,
+  unstable_defaultDirectiveFormatter,
+  unstable_useComposerInput,
+  unstable_useMentionAdapter,
+  unstable_useSlashCommandAdapter,
   useAuiState,
 } from "@assistant-ui/react";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  AtSign,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -57,6 +62,7 @@ import {
 } from "lucide-react";
 import {
   createContext,
+  useCallback,
   useContext,
   type ComponentType,
   type FC,
@@ -228,37 +234,181 @@ const ThreadSuggestionItem: FC = () => {
   );
 };
 
+const MENTION_FENCE: Record<string, string> = {
+  "create-page": "```wiki-create-page\n\n\n```",
+  "create-collection": "```collection-create\n\n\n```",
+  "propose-update": "```wiki-update\n\n\n```",
+};
+
 const Composer: FC = () => {
+  const { categories, onInserted: sourceOnInserted } = useSourceMentions();
+  const { value, setText } = unstable_useComposerInput();
+
+  const mention = unstable_useMentionAdapter({
+    categories,
+    formatter: unstable_defaultDirectiveFormatter,
+    onInserted: sourceOnInserted,
+  });
+
+  const slash = unstable_useSlashCommandAdapter({
+    commands: [
+      {
+        id: "create-page",
+        label: "Create wiki page",
+        description: "Insert a wiki page creation fence",
+        execute: () => setText(value + "\n" + MENTION_FENCE["create-page"] + "\n"),
+      },
+      {
+        id: "create-collection",
+        label: "Create collection",
+        description: "Insert a collection creation fence",
+        execute: () => setText(value + "\n" + MENTION_FENCE["create-collection"] + "\n"),
+      },
+      {
+        id: "propose-update",
+        label: "Propose wiki update",
+        description: "Insert a wiki update proposal fence",
+        execute: () => setText(value + "\n" + MENTION_FENCE["propose-update"] + "\n"),
+      },
+    ],
+    removeOnExecute: true,
+  });
+
+  const handleAtClick = useCallback(() => {
+    setText(value + "@");
+  }, [value, setText]);
+
   return (
-    <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
-      <ComposerPrimitive.AttachmentDropzone asChild>
-        <div
-          data-slot="aui_composer-shell"
-          className="border-border/60 data-[dragging=true]:border-ring focus-within:border-border dark:border-muted-foreground/15 dark:focus-within:border-muted-foreground/30 flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))] dark:shadow-none"
-        >
-          <ComposerAttachments />
-          <ComposerPrimitive.Input
-            placeholder="Send a message..."
-            className="aui-composer-input caret-primary placeholder:text-muted-foreground/80 max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none"
-            rows={1}
-            autoFocus
-            enterKeyHint="send"
-            aria-label="Message input"
-          />
-          <ComposerAction />
+    <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+      <ComposerPrimitive.Unstable_TriggerPopover char="@" adapter={mention.adapter}>
+        <ComposerPrimitive.Unstable_TriggerPopover.Directive
+          formatter={mention.directive.formatter}
+          onInserted={mention.directive.onInserted}
+        />
+        <div className="bg-popover text-popover-foreground z-50 min-w-56 overflow-hidden rounded-xl border p-1 shadow-lg">
+          <ComposerPrimitive.Unstable_TriggerPopoverCategories>
+            {(cats) => (
+              <div className="flex flex-col gap-0.5">
+                {cats.map((cat) => (
+                  <ComposerPrimitive.Unstable_TriggerPopoverCategoryItem
+                    key={cat.id}
+                    categoryId={cat.id}
+                    className="hover:bg-accent aria-selected:bg-accent flex items-center rounded-lg px-2.5 py-2 text-xs font-medium outline-none"
+                  >
+                    {cat.label}
+                  </ComposerPrimitive.Unstable_TriggerPopoverCategoryItem>
+                ))}
+              </div>
+            )}
+          </ComposerPrimitive.Unstable_TriggerPopoverCategories>
+          <ComposerPrimitive.Unstable_TriggerPopoverItems>
+            {(items) => (
+              <div className="flex flex-col gap-0.5">
+                {items.map((item) => (
+                  <ComposerPrimitive.Unstable_TriggerPopoverItem
+                    key={item.id}
+                    item={item}
+                    className="hover:bg-accent aria-selected:bg-accent flex flex-col rounded-lg px-2.5 py-1.5 text-xs outline-none data-highlighted:bg-accent"
+                  >
+                    <span className="font-medium">{item.label}</span>
+                    {item.description && (
+                      <span className="text-muted-foreground text-[10px]">
+                        {item.description}
+                      </span>
+                    )}
+                  </ComposerPrimitive.Unstable_TriggerPopoverItem>
+                ))}
+              </div>
+            )}
+          </ComposerPrimitive.Unstable_TriggerPopoverItems>
         </div>
-      </ComposerPrimitive.AttachmentDropzone>
-    </ComposerPrimitive.Root>
+      </ComposerPrimitive.Unstable_TriggerPopover>
+
+      <ComposerPrimitive.Unstable_TriggerPopover char="/" adapter={slash.adapter}>
+        <ComposerPrimitive.Unstable_TriggerPopover.Action
+          onExecute={slash.action.onExecute}
+          removeOnExecute={slash.action.removeOnExecute}
+        />
+        <div className="bg-popover text-popover-foreground z-50 min-w-48 overflow-hidden rounded-xl border p-1 shadow-lg">
+          <ComposerPrimitive.Unstable_TriggerPopoverCategories>
+            {(cats) => (
+              <div className="flex flex-col gap-0.5">
+                {cats.map((cat) => (
+                  <ComposerPrimitive.Unstable_TriggerPopoverCategoryItem
+                    key={cat.id}
+                    categoryId={cat.id}
+                    className="hover:bg-accent aria-selected:bg-accent flex items-center rounded-lg px-2.5 py-2 text-xs font-medium outline-none"
+                  >
+                    {cat.label}
+                  </ComposerPrimitive.Unstable_TriggerPopoverCategoryItem>
+                ))}
+              </div>
+            )}
+          </ComposerPrimitive.Unstable_TriggerPopoverCategories>
+          <ComposerPrimitive.Unstable_TriggerPopoverItems>
+            {(items) => (
+              <div className="flex flex-col gap-0.5">
+                {items.map((item) => (
+                  <ComposerPrimitive.Unstable_TriggerPopoverItem
+                    key={item.id}
+                    item={item}
+                    className="hover:bg-accent aria-selected:bg-accent flex flex-col rounded-lg px-2.5 py-1.5 text-xs outline-none data-highlighted:bg-accent"
+                  >
+                    <span className="font-medium">{item.label}</span>
+                    {item.description && (
+                      <span className="text-muted-foreground text-[10px]">
+                        {item.description}
+                      </span>
+                    )}
+                  </ComposerPrimitive.Unstable_TriggerPopoverItem>
+                ))}
+              </div>
+            )}
+          </ComposerPrimitive.Unstable_TriggerPopoverItems>
+        </div>
+      </ComposerPrimitive.Unstable_TriggerPopover>
+
+      <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
+        <ComposerPrimitive.AttachmentDropzone asChild>
+          <div
+            data-slot="aui_composer-shell"
+            className="border-border/60 data-[dragging=true]:border-ring focus-within:border-border dark:border-muted-foreground/15 dark:focus-within:border-muted-foreground/30 flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))] dark:shadow-none"
+          >
+            <ComposerAttachments />
+            <ComposerPrimitive.Input
+              placeholder="Send a message..."
+              className="aui-composer-input caret-primary placeholder:text-muted-foreground/80 max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none"
+              rows={1}
+              autoFocus
+              enterKeyHint="send"
+              aria-label="Message input"
+            />
+            <ComposerAction onAtClick={handleAtClick} />
+          </div>
+        </ComposerPrimitive.AttachmentDropzone>
+      </ComposerPrimitive.Root>
+    </ComposerPrimitive.Unstable_TriggerPopoverRoot>
   );
 };
 
-const ComposerAction: FC = () => {
+const ComposerAction: FC<{ onAtClick: () => void }> = ({ onAtClick }) => {
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
       <div className="flex items-center gap-2">
         <ComposerAddAttachment />
         <ComposerModelSelect />
-        <SourceSelector />
+        <TooltipIconButton
+          tooltip="Mention a source (@)"
+          side="bottom"
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7 rounded-full"
+          aria-label="Mention a source"
+          onClick={onAtClick}
+        >
+          <AtSign className="size-4" />
+        </TooltipIconButton>
       </div>
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>
