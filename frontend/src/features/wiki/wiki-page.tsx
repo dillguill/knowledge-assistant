@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { loadSettings } from "@/features/settings/settings-storage";
 import { buildWikiLinkResolver, buildWikiTree, type WikiFolderNode, type WikiFolderTree } from "./tree";
@@ -133,8 +133,19 @@ function FolderToolbar({
 /**
  * Route shell for the wiki section: folder navigation (root + nested
  * folders) and a page view (view/edit toggle, CRUD dialogs).
+ *
+ * `openSlug` lets a caller outside the wiki (a chat citation chip, via the
+ * `wiki-navigation` bridge — there's no client-side router to carry a real
+ * deep link) jump straight to a specific page; `onOpened` is called once the
+ * jump has been applied so the caller can clear its pending request.
  */
-export function WikiPage() {
+export function WikiPage({
+  openSlug,
+  onOpened,
+}: {
+  openSlug?: string | null;
+  onOpened?: () => void;
+} = {}) {
   const { tree: rawTree, refresh: refreshTree } = useWikiTree();
   const [route, setRoute] = useState<WikiRoute>({ kind: "folder", id: null });
   const isOwner = Boolean(loadSettings().ownerToken);
@@ -144,6 +155,13 @@ export function WikiPage() {
 
   const onNavigateFolder = (id: number | null) => setRoute({ kind: "folder", id });
   const onNavigatePage = (slug: string) => setRoute({ kind: "page", slug });
+
+  useEffect(() => {
+    if (!openSlug) return;
+    setRoute({ kind: "page", slug: openSlug });
+    onOpened?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSlug]);
 
   if (route.kind === "page") {
     return (

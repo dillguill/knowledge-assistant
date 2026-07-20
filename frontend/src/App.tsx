@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/app/shell";
+import { onWikiNavigationRequest } from "@/app/wiki-navigation";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatPage } from "@/features/chat/chat-page";
@@ -20,6 +21,17 @@ const TITLES: Record<View, string> = {
 
 function App() {
   const [view, setView] = useState<View>("chat");
+  const [wikiOpenSlug, setWikiOpenSlug] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      onWikiNavigationRequest(({ slug }) => {
+        setView("wiki");
+        setWikiOpenSlug(slug);
+      }),
+    [],
+  );
+
   return (
     <SettingsProvider>
       {/* assistant-ui's attachment tiles render a raw Radix Tooltip, so the app
@@ -47,7 +59,12 @@ function App() {
             </div>
             {view === "settings" && <SettingsPage />}
             {view === "documents" && <DocumentsPage />}
-            {view === "wiki" && <WikiPage />}
+            {view === "wiki" && (
+              <WikiPage
+                openSlug={wikiOpenSlug}
+                onOpened={() => setWikiOpenSlug(null)}
+              />
+            )}
           </AppShell>
         </ChatProvider>
       </TooltipProvider>

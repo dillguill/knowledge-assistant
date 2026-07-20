@@ -1,6 +1,12 @@
 import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
 
-type Source = { id: number; label: string; filename: string };
+type Source = {
+  id: number;
+  label: string;
+  filename: string;
+  kind?: "document" | "wiki";
+  slug?: string;
+};
 
 type SseEvent =
   | { type: "text-delta"; text: string }
@@ -72,11 +78,16 @@ async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<SseEv
   }
 }
 
-export type SourceConfig = { collectionIds: number[]; attachmentIds: number[] };
+export type SourceConfig = {
+  collectionIds: number[];
+  attachmentIds: number[];
+  wikiPageIds: number[];
+};
 
 const NO_SOURCES: () => SourceConfig = () => ({
   collectionIds: [],
   attachmentIds: [],
+  wikiPageIds: [],
 });
 
 /** Streams chat completions from the Knowledge Assistant backend. */
@@ -105,6 +116,7 @@ export function createApiAdapter(
       };
       if (source.collectionIds.length) body.collection_ids = source.collectionIds;
       if (attachmentIds.length) body.attachment_ids = attachmentIds;
+      if (source.wikiPageIds.length) body.wiki_page_ids = source.wikiPageIds;
       const response = await fetch(`${baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -121,8 +133,13 @@ export function createApiAdapter(
           type: "source" as const,
           sourceType: "url" as const,
           id: String(s.id),
-          url: `${baseUrl}/api/knowledge/files/${s.id}/raw`,
+          url:
+            s.kind === "wiki" && s.slug
+              ? `/wiki/page/${s.slug}`
+              : `${baseUrl}/api/knowledge/files/${s.id}/raw`,
           title: `[${s.label}] ${s.filename}`,
+          kind: s.kind ?? "document",
+          slug: s.slug,
         }));
       for await (const event of parseSse(response.body)) {
         if (event.type === "error") {
@@ -135,7 +152,13 @@ export function createApiAdapter(
         if (event.type === "sources") sources = event.sources;
         if (event.type === "text-delta") {
           text += event.text;
-          yield { content: [{ type: "text" as const, text }, ...sourceParts()] };
+          yield {
+            content: [{ type: "text" as const, text }, ...sourceParts()],
+            // Carried on the message so a `wiki-update` proposal card
+            // (Task 16) can reuse this exact list as its citations, per the
+            // "citations = the message's sources event payload" rule.
+            metadata: { custom: { citationSources: sources } },
+          };
         }
       }
     },

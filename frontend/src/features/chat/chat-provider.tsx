@@ -13,7 +13,7 @@ import { createApiAdapter } from "./api-adapter";
 import { BackendAttachmentAdapter } from "./backend-attachment-adapter";
 import { demoAdapter } from "./demo-adapter";
 import { GlobalInstructions } from "./global-instructions";
-import { SourceSelectionProvider, sourceRef } from "./source-selection";
+import { SourceSelectionProvider, sourceRef, wikiSourceRef } from "./source-selection";
 import { browserThreadStorage, STORAGE_PREFIX } from "./thread-storage";
 import { useBackendStatus, type BackendStatus } from "./use-backend-status";
 
@@ -43,6 +43,7 @@ const chatAdapter = API_URL
   ? createApiAdapter(API_URL, () => modelRef.current, () => ({
       collectionIds: sourceRef.current,
       attachmentIds: [],
+      wikiPageIds: wikiSourceRef.current,
     }))
   : demoAdapter;
 
