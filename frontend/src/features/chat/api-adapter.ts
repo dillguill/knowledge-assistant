@@ -1,4 +1,5 @@
 import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
+import { loadSettings } from "../settings/settings-storage";
 
 type Source = {
   id: number;
@@ -14,7 +15,8 @@ type SseEvent =
   | { type: "text-delta"; text: string }
   | { type: "sources"; sources: Source[] }
   | { type: "target"; target: ChatTarget }
-  | { type: "error"; code: string; message: string; retry_after?: number };
+  | { type: "error"; code: string; message: string; retry_after?: number }
+  | { type: "action"; action: string; result?: Record<string, unknown>; error?: string };
 
 export class ChatError extends Error {
   code: string;
@@ -129,6 +131,11 @@ export function createApiAdapter(
       if (attachmentIds.length) body.attachment_ids = attachmentIds;
       if (wikiPageIds.length) body.wiki_page_ids = wikiPageIds;
       if (targetPageId !== null) body.target_page_id = targetPageId;
+      const ownerToken = loadSettings().ownerToken;
+      if (ownerToken) {
+        body.tools_enabled = true;
+        body.owner_token = ownerToken;
+      }
       const response = await fetch(`${baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

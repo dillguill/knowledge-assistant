@@ -336,6 +336,35 @@ test("collects attachment ids from message attachments into the body", async () 
   vi.unstubAllGlobals();
 });
 
+test("includes tools_enabled and owner_token when owner token is set", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("localStorage", {
+    getItem: () => JSON.stringify({ ownerToken: "sekrit" }),
+  });
+  const adapter = createApiAdapter("https://api.test", () => null);
+  await drain(run(adapter));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.tools_enabled).toBe(true);
+  expect(body.owner_token).toBe("sekrit");
+  vi.unstubAllGlobals();
+});
+
+test("omits tools_enabled and owner_token when owner token is not set", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter("https://api.test", () => null);
+  await drain(run(adapter));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.tools_enabled).toBeUndefined();
+  expect(body.owner_token).toBeUndefined();
+  vi.unstubAllGlobals();
+});
+
 test("throws a readable error on an error event", async () => {
   vi.stubGlobal(
     "fetch",
