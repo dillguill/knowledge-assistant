@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.services import openrouter
+from app.services import actions, openrouter
 from app.services.context_builder import build_source_context
 from app.services.target_builder import build_target_context
 
@@ -25,6 +25,8 @@ class ChatRequest(BaseModel):
     attachment_ids: list[int] = []
     wiki_page_ids: list[int] = []
     target_page_id: int | None = None
+    tools_enabled: bool = False
+    owner_token: str = ""
 
 
 def _event(payload: dict) -> str:
@@ -33,6 +35,9 @@ def _event(payload: dict) -> str:
 
 async def _sse(request: ChatRequest) -> AsyncIterator[str]:
     messages = [m.model_dump() for m in request.messages]
+
+    if request.tools_enabled:
+        messages.insert(0, {"role": "system", "content": actions.SYSTEM_PROMPT})
 
     target_inserted = False
     if request.target_page_id is not None:
@@ -64,11 +69,14 @@ async def _sse(request: ChatRequest) -> AsyncIterator[str]:
             messages.insert(
                 1 if target_inserted else 0, {"role": "system", "content": block}
             )
+
+    full_text = ""
     try:
         async for delta in openrouter.stream_chat(
             model=request.model,
             messages=messages,
         ):
+            full_text += delta
             yield _event({"type": "text-delta", "text": delta})
     except openrouter.RateLimitedError as exc:
         event: dict = {
@@ -95,6 +103,11 @@ async def _sse(request: ChatRequest) -> AsyncIterator[str]:
                 "message": "The model provider is unavailable.",
             }
         )
+    else:
+        if request.tools_enabled:
+            for action in actions.parse_actions(full_text):
+                result = actions.execute_action(action, request.owner_token)
+                yield _event({"type": "action", **result})
     yield "data: [DONE]\n\n"
 
 

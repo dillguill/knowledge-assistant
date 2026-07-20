@@ -287,3 +287,207 @@ async def test_chat_with_unknown_target_emits_error_and_skips_upstream(
     assert events[-1] == "[DONE]"
     assert route.called is False
     get_settings.cache_clear()
+
+
+@respx.mock
+async def test_tools_enabled_injects_system_prompt(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.db import store
+    from app.services import actions
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OWNER_TOKEN", "sekrit")
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+
+    route = respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "create a page"}],
+            "tools_enabled": True,
+            "owner_token": "sekrit",
+        })
+    assert resp.status_code == 200
+    sent = json.loads(route.calls[0].request.content)
+    prompt = sent["messages"][0]["content"]
+    assert "wiki-create-page" in prompt
+    assert "collection-create" in prompt
+    assert "wiki-update" in prompt
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_tools_disabled_no_system_prompt():
+    route = respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+    assert resp.status_code == 200
+    sent = json.loads(route.calls[0].request.content)
+    for msg in sent["messages"]:
+        assert "wiki-create-page" not in msg.get("content", "")
+        assert "collection-create" not in msg.get("content", "")
+        assert "wiki-update" not in msg.get("content", "")
+
+
+@respx.mock
+async def test_tools_enabled_emits_action_events(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.db import store, wiki_store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OWNER_TOKEN", "sekrit")
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+    wiki_store.init_wiki(str(tmp_path))
+
+    WIKI_CREATE_SSE = (
+        b'data: {"id":"1","choices":[{"delta":{"content":'
+        b'"Creating page...\\n\\n```wiki-create-page\\n'
+        b'{\\"title\\": \\"Reading List\\", \\"content\\": \\"books\\"}\\n```"}}]}\n\n'
+        b'data: {"id":"1","choices":[{"delta":{}}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+    route = respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=WIKI_CREATE_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "create a reading list page"}],
+            "tools_enabled": True,
+            "owner_token": "sekrit",
+        })
+    events = parse_events(resp.text)
+    action_events = [
+        json.loads(e) for e in events[:-1]
+        if json.loads(e).get("type") == "action"
+    ]
+    assert len(action_events) == 1
+    assert action_events[0]["action"] == "wiki-create-page"
+    assert "result" in action_events[0]
+    assert action_events[0]["result"]["title"] == "Reading List"
+
+    pages = wiki_store.list_pages()
+    assert len(pages) == 1
+    assert pages[0]["title"] == "Reading List"
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_tools_enabled_collection_action(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.db import store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OWNER_TOKEN", "sekrit")
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+
+    COL_CREATE_SSE = (
+        b'data: {"id":"1","choices":[{"delta":{"content":'
+        b'"Done.\\n\\n```collection-create\\n'
+        b'{\\"name\\": \\"Engine Specs\\"}\\n```"}}]}\n\n'
+        b'data: {"id":"1","choices":[{"delta":{}}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+    respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=COL_CREATE_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "create a collection"}],
+            "tools_enabled": True,
+            "owner_token": "sekrit",
+        })
+    events = parse_events(resp.text)
+    action_events = [
+        json.loads(e) for e in events[:-1]
+        if json.loads(e).get("type") == "action"
+    ]
+    assert len(action_events) == 1
+    assert action_events[0]["action"] == "collection-create"
+    assert action_events[0]["result"]["name"] == "Engine Specs"
+
+    cols = store.list_collections()
+    assert len(cols) == 1
+    assert cols[0]["name"] == "Engine Specs"
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_tools_enabled_owner_gated_action_fails_without_token(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.db import store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OWNER_TOKEN", "sekrit")
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+
+    WIKI_CREATE_SSE = (
+        b'data: {"id":"1","choices":[{"delta":{"content":'
+        b'"```wiki-create-page\\n'
+        b'{\\"title\\": \\"X\\", \\"content\\": \\"y\\"}\\n```"}}]}\n\n'
+        b'data: {"id":"1","choices":[{"delta":{}}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+    respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=WIKI_CREATE_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "create a page"}],
+            "tools_enabled": True,
+            "owner_token": "",
+        })
+    events = parse_events(resp.text)
+    action_events = [
+        json.loads(e) for e in events[:-1]
+        if json.loads(e).get("type") == "action"
+    ]
+    assert len(action_events) == 1
+    assert action_events[0]["action"] == "wiki-create-page"
+    assert "error" in action_events[0]
+    assert "Owner token required" in action_events[0]["error"]
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_tools_enabled_no_fences_gives_no_action_events(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.db import store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+
+    respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools_enabled": True,
+        })
+    events = parse_events(resp.text)
+    action_events = [e for e in events if '"type":"action"' in e]
+    assert len(action_events) == 0
+    assert events[-1] == "[DONE]"
+    get_settings.cache_clear()
