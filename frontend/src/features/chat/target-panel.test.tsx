@@ -57,7 +57,12 @@ test("a visitor (no owner token) sees no Edit button", async () => {
 test("an owner can flip to edit (reusing PageEditor) and save", async () => {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ownerToken: "tok" }));
   localStorage.setItem(TARGET_STORAGE_KEY, JSON.stringify(5));
-  vi.spyOn(wikiApi, "getPage").mockResolvedValue(page);
+  // Saving triggers a refetch (shared `useTargetPage()` refresh-token effect)
+  // rather than an optimistic local update, so the second `getPage` call
+  // needs to reflect the saved content.
+  vi.spyOn(wikiApi, "getPage")
+    .mockResolvedValueOnce(page)
+    .mockResolvedValue({ ...page, content: "# Updated" });
   const updateSpy = vi.spyOn(wikiApi, "updatePage").mockResolvedValue({
     ...page,
     content: "# Updated",

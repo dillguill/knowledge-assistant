@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { loadSettings } from "@/features/settings/settings-storage";
-import { getPage, updatePage, type WikiPage } from "@/features/wiki/api";
+import { updatePage } from "@/features/wiki/api";
 import { PageEditor } from "@/features/wiki/page-editor";
 import { WikiMarkdown, type WikiLinkResolver } from "@/features/wiki/wiki-markdown";
-import { useTargetSelection } from "./target-selection";
+import { bumpTargetRefresh, useTargetPage, useTargetSelection } from "./target-selection";
 
 // The target panel doesn't resolve `[[wiki links]]` inside the target page
 // (there's no click-through navigation out of the chat panel) — every link
@@ -18,36 +18,19 @@ const noResolve: WikiLinkResolver = () => ({ slug: "", exists: false });
  * and one piece of state regardless of viewport). Owners can flip to an
  * inline editor (reusing the same `PageEditor` the wiki page view uses);
  * visitors only ever see the rendered page.
+ *
+ * Fetching is shared with `proposal-card.tsx` via `useTargetPage()` (both
+ * need "the current content of the targeted page") rather than each keeping
+ * its own copy of the same fetch-on-target-change effect.
  */
 export function TargetPanel() {
-  const { targetPageId, setTargetPageId, refreshToken } = useTargetSelection();
-  const [page, setPage] = useState<WikiPage | null>(null);
+  const { targetPageId, setTargetPageId } = useTargetSelection();
+  const { page } = useTargetPage();
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isOwner = Boolean(loadSettings().ownerToken);
-
-  useEffect(() => {
-    if (targetPageId === null) {
-      setPage(null);
-      setMode("view");
-      return;
-    }
-    let cancelled = false;
-    getPage(targetPageId)
-      .then((p) => {
-        if (cancelled) return;
-        setPage(p);
-        setMode((m) => (m === "edit" ? m : "view"));
-      })
-      .catch(() => {
-        if (!cancelled) setPage(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [targetPageId, refreshToken]);
 
   if (targetPageId === null) return null;
 
@@ -68,8 +51,8 @@ export function TargetPanel() {
     setSaving(true);
     setError(null);
     try {
-      const updated = await updatePage(page.id, draft);
-      setPage(updated);
+      await updatePage(page.id, draft);
+      bumpTargetRefresh();
       setMode("view");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save page.");

@@ -1,11 +1,12 @@
 import {
   createContext,
+  createElement,
   useContext,
   useEffect,
   useState,
   type ReactNode,
 } from "react";
-import { createElement } from "react";
+import { getPage, type WikiPage } from "@/features/wiki/api";
 
 /** Session-global target page selection — one page max, mirrors
  * `source-selection.tsx`'s shape (context + module-level ref so the
@@ -78,4 +79,34 @@ export function TargetSelectionProvider({ children }: { children: ReactNode }) {
     { value: { targetPageId, setTargetPageId, refreshToken } },
     children,
   );
+}
+
+/** Fetches the full content of the currently-targeted page, refetching
+ * whenever the target changes or `bumpTargetRefresh()` fires. Shared by
+ * `target-panel.tsx` (the visible panel) and `proposal-card.tsx` (needs the
+ * current target content to diff a `wiki-update` fence against) so there's
+ * one fetch-on-target-change implementation, not two. */
+export function useTargetPage(): { targetPageId: number | null; page: WikiPage | null } {
+  const { targetPageId, refreshToken } = useTargetSelection();
+  const [page, setPage] = useState<WikiPage | null>(null);
+
+  useEffect(() => {
+    if (targetPageId === null) {
+      setPage(null);
+      return;
+    }
+    let cancelled = false;
+    getPage(targetPageId)
+      .then((p) => {
+        if (!cancelled) setPage(p);
+      })
+      .catch(() => {
+        if (!cancelled) setPage(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [targetPageId, refreshToken]);
+
+  return { targetPageId, page };
 }

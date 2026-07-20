@@ -6,7 +6,6 @@ import {
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
 import { ThreadFollowupSuggestions } from "@/components/assistant-ui/follow-up-suggestions";
-import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import {
   Reasoning,
   ReasoningContent,
@@ -24,6 +23,7 @@ import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button
 import { Button } from "@/components/ui/button";
 import { CitationChip } from "@/features/chat/citation-chip";
 import { ComposerModelSelect } from "@/features/chat/composer-model-select";
+import { WikiUpdateAwareText } from "@/features/chat/proposal-card";
 import { SourceSelector } from "@/features/chat/source-selector";
 import { cn } from "@/lib/utils";
 import {
@@ -347,6 +347,15 @@ const AssistantMessage: FC = () => {
   // Keep the action bar inside the contained root's paint box, then cancel its reserved space in flow.
   const ACTION_BAR_HEIGHT = `min-h-7.5 ${ACTION_BAR_PT}`;
 
+  // The raw `sources` event payload for this message, if the api-adapter
+  // attached one (see api-adapter.ts's `citationSources` metadata) — reused
+  // as-is for a `wiki-update` proposal's citations, per the "citations = the
+  // message's sources event payload, else []" rule.
+  const citationSources =
+    (useAuiState(
+      (s) => s.message.metadata?.custom?.citationSources as unknown[] | undefined,
+    ) ?? []) as unknown[];
+
   return (
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
@@ -398,7 +407,7 @@ const AssistantMessage: FC = () => {
                 );
               }
               case "text":
-                return <MarkdownText />;
+                return <WikiUpdateAwareText text={part.text} citations={citationSources} />;
               case "source":
                 return <CitationChip {...part} />;
               case "reasoning":
