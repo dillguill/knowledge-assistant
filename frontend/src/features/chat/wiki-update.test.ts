@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { extractWikiUpdate } from "./wiki-update";
+import { extractWikiUpdate, stripActionFences } from "./wiki-update";
 
 test("plain text with no fence at all", () => {
   const result = extractWikiUpdate("Just a normal reply, no fence here.");
@@ -61,4 +61,33 @@ test("a wiki-update mention mid-line (not its own fence line) is not treated as 
   const result = extractWikiUpdate("I could use a ```wiki-update fence if you want.");
   expect(result.block).toBeNull();
   expect(result.before).toBe("I could use a ```wiki-update fence if you want.");
+});
+
+test("stripActionFences removes a complete wiki-create-page fence, keeps prose", () => {
+  const text = [
+    "I created that page for you.",
+    "```wiki-create-page",
+    '{"title": "Homelab", "content": "# Homelab"}',
+    "```",
+  ].join("\n");
+  expect(stripActionFences(text)).toBe("I created that page for you.");
+});
+
+test("stripActionFences removes a still-streaming (unclosed) create fence", () => {
+  const text = ["Working on it.", "```wiki-create-page", '{"title": "Home'].join(
+    "\n",
+  );
+  expect(stripActionFences(text)).toBe("Working on it.");
+});
+
+test("stripActionFences removes a collection-create fence", () => {
+  const text = ["Done.", "```collection-create", '{"name": "Manuals"}', "```"].join(
+    "\n",
+  );
+  expect(stripActionFences(text)).toBe("Done.");
+});
+
+test("stripActionFences leaves ordinary text (and wiki-update) untouched", () => {
+  const text = ["No action fences here.", "```wiki-update", "# x", "```"].join("\n");
+  expect(stripActionFences(text)).toBe(text.trim());
 });

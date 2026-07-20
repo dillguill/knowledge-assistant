@@ -42,6 +42,25 @@ export function bumpTargetRefresh(): void {
   refreshListener?.();
 }
 
+// Module-level bridge so the module-level chat adapter can pin a page as the
+// edit target (e.g. after the assistant creates a page) without a React
+// handle — same pattern as `wiki-navigation`/`composer-actions`.
+type EditTargetListener = (pageId: number) => void;
+let editTargetListener: EditTargetListener | null = null;
+
+/** Pins a page as the edit target from outside React. No-op if no provider is
+ * mounted to listen. */
+export function requestEditTarget(pageId: number): void {
+  editTargetListener?.(pageId);
+}
+
+export function onEditTargetRequest(fn: EditTargetListener): () => void {
+  editTargetListener = fn;
+  return () => {
+    if (editTargetListener === fn) editTargetListener = null;
+  };
+}
+
 const TargetContext = createContext<{
   targetPageId: number | null;
   setTargetPageId: (id: number | null) => void;
@@ -66,6 +85,16 @@ export function TargetSelectionProvider({ children }: { children: ReactNode }) {
       if (refreshListener) refreshListener = null;
     };
   }, []);
+
+  useEffect(
+    () =>
+      onEditTargetRequest((id) => {
+        targetRef.current = id;
+        localStorage.setItem(TARGET_STORAGE_KEY, JSON.stringify(id));
+        setState(id);
+      }),
+    [],
+  );
 
   const setTargetPageId = (id: number | null) => {
     targetRef.current = id;

@@ -7,7 +7,7 @@ import { diffToHunks, hunksToPatch } from "@/features/wiki/diff";
 import { approveProposal, createProposal, type WikiPage } from "@/features/wiki/api";
 import { WikiMarkdown, type WikiLinkResolver } from "@/features/wiki/wiki-markdown";
 import { bumpTargetRefresh, useTargetPage } from "./target-selection";
-import { extractWikiUpdate } from "./wiki-update";
+import { extractWikiUpdate, stripActionFences } from "./wiki-update";
 
 type CardStatus =
   | { kind: "idle" }
@@ -181,12 +181,25 @@ export function WikiUpdateAwareText({
   text: string;
   citations?: unknown[];
 }) {
-  const { before, block, after } = extractWikiUpdate(text);
+  // Drop `wiki-create-page` / `collection-create` tool JSON so it never shows
+  // as raw text (those actions are executed + confirmed out of band).
+  const cleaned = stripActionFences(text);
+  const hadActionFence = cleaned !== text.trim();
+  const { before, block, after } = extractWikiUpdate(cleaned);
   // Called unconditionally (rules of hooks) — cheap no-op fetch when there's
   // no fence to react to, since most messages never hit this path anyway.
   const { page: targetPage } = useTargetPage();
 
-  if (!block) return <MarkdownText />;
+  if (!block) {
+    // Stripped an action fence: render the cleaned prose ourselves, since
+    // `MarkdownText` pulls the raw (unstripped) part text from context.
+    if (hadActionFence) {
+      return cleaned ? (
+        <WikiMarkdown content={cleaned} resolve={noResolve} />
+      ) : null;
+    }
+    return <MarkdownText />;
+  }
 
   return (
     <>

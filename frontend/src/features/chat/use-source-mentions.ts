@@ -2,23 +2,18 @@ import { useCallback, useMemo } from "react";
 import { useCollections } from "@/features/knowledge/use-knowledge";
 import { useWikiTree } from "@/features/wiki/use-wiki";
 import { useSourceSelection } from "./source-selection";
-import { useTargetSelection } from "./target-selection";
 
 /**
  * Feeds the composer's `@` popover. Picking an item doesn't insert any text
- * (the popover runs in "action" mode) — it updates the session's source /
- * target selection, which surfaces as removable pills above the composer:
- *
- * - Wiki Pages / Collections → added as grounding sources.
- * - Edit Page → pinned as the single edit target (opens the TargetPanel side
- *   panel and drives wiki-update proposals).
+ * (the popover runs in "action" mode) — it adds the Wiki Page / Collection as
+ * a grounding source, shown as a removable pill above the composer. (Choosing
+ * a page to *edit* is a separate `/edit-page` command, not an `@` mention.)
  */
 export function useSourceMentions() {
   const { tree } = useWikiTree();
   const { collections } = useCollections();
   const { wikiPageIds, setWikiPageIds, collectionIds, setCollectionIds } =
     useSourceSelection();
-  const { setTargetPageId } = useTargetSelection();
 
   const categories = useMemo(
     () => [
@@ -41,23 +36,13 @@ export function useSourceMentions() {
           label: c.name,
         })),
       },
-      {
-        id: "edit-pages" as const,
-        label: "Edit Page",
-        items: tree.pages.map((p) => ({
-          id: `edit-${p.id}`,
-          type: "edit-page" as const,
-          label: p.title,
-          description: p.slug,
-        })),
-      },
     ],
     [tree.pages, collections],
   );
 
-  // Dispatch on the id prefix (`wiki-`/`col-`/`edit-`) rather than a `type`
-  // field: the id is always preserved on the item passed to the popover's
-  // action handler, custom metadata is not guaranteed to be.
+  // Dispatch on the id prefix (`wiki-`/`col-`) rather than a `type` field: the
+  // id is always preserved on the item passed to the popover's action handler,
+  // custom metadata is not guaranteed to be.
   const onSelect = useCallback(
     (item: { id: string }) => {
       if (item.id.startsWith("wiki-")) {
@@ -70,18 +55,9 @@ export function useSourceMentions() {
         if (collectionId && !collectionIds.includes(collectionId)) {
           setCollectionIds([...collectionIds, collectionId]);
         }
-      } else if (item.id.startsWith("edit-")) {
-        const pageId = Number(item.id.slice("edit-".length));
-        if (pageId) setTargetPageId(pageId);
       }
     },
-    [
-      wikiPageIds,
-      setWikiPageIds,
-      collectionIds,
-      setCollectionIds,
-      setTargetPageId,
-    ],
+    [wikiPageIds, setWikiPageIds, collectionIds, setCollectionIds],
   );
 
   return { categories, onSelect };
