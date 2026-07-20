@@ -55,3 +55,26 @@ export function extractWikiUpdate(text: string): WikiUpdateExtraction {
 
   return { before: text, block: null, after: "" };
 }
+
+const ACTION_FENCES = ["wiki-create-page", "collection-create"] as const;
+
+/**
+ * Removes `wiki-create-page` / `collection-create` fenced blocks — the raw tool
+ * JSON the assistant emits — from displayed text, including a still-streaming
+ * (opened, not-yet-closed) fence so partial JSON never flashes. Unlike
+ * `wiki-update`, these are executed immediately server-side and confirmed via
+ * an SSE `action` event, so there's nothing to render for them. Mirrors
+ * `backend/app/services/actions.py`'s `_strip_fences`.
+ */
+export function stripActionFences(text: string): string {
+  let out = text;
+  for (const name of ACTION_FENCES) {
+    out = out
+      .replace(
+        new RegExp("^```" + name + "[ \\t]*\\n[\\s\\S]*?\\n```[ \\t]*$", "gm"),
+        "",
+      )
+      .replace(new RegExp("^```" + name + "[ \\t]*\\n[\\s\\S]*$", "m"), "");
+  }
+  return out.trim();
+}

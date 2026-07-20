@@ -33,6 +33,7 @@ import {
 } from "@/app/composer-actions";
 import { CitationChip } from "@/features/chat/citation-chip";
 import { ComposerModelSelect } from "@/features/chat/composer-model-select";
+import { EditPagePicker } from "@/features/chat/edit-page-picker";
 import { WikiUpdateAwareText } from "@/features/chat/proposal-card";
 import { SourcePills } from "@/features/chat/source-pills";
 import { useSourceMentions } from "@/features/chat/use-source-mentions";
@@ -254,6 +255,7 @@ const ThreadSuggestionItem: FC = () => {
 const Composer: FC = () => {
   const { categories, onSelect: sourceOnSelect } = useSourceMentions();
   const { value, setText } = unstable_useComposerInput();
+  const [editPickerOpen, setEditPickerOpen] = useState(false);
 
   // `@` runs in action mode: picking a source/target updates the selection
   // (shown as pills above) rather than inserting directive text the textarea
@@ -286,6 +288,12 @@ const Composer: FC = () => {
         // "/create-page" token.
         execute: () =>
           requestAnimationFrame(() => setText("Create a wiki page: ")),
+      },
+      {
+        id: "edit-page",
+        label: "Edit page",
+        description: "Pick a page to edit in the side panel",
+        execute: () => setEditPickerOpen(true),
       },
     ],
     [setText],
@@ -347,6 +355,7 @@ const Composer: FC = () => {
           fallbackIcon={SlashIcon}
         />
       </ComposerPrimitive.Root>
+      <EditPagePicker open={editPickerOpen} onOpenChange={setEditPickerOpen} />
     </ComposerPrimitive.Unstable_TriggerPopoverRoot>
   );
 };

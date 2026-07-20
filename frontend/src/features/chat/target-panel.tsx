@@ -64,7 +64,7 @@ export function TargetPanel() {
   return (
     <div
       aria-label="Target page"
-      className="fixed inset-x-0 bottom-0 z-30 flex max-h-[70vh] flex-col gap-3 overflow-y-auto border-t border-border bg-card p-4 md:static md:h-full md:max-h-none md:w-80 md:shrink-0 md:overflow-y-auto md:border-t-0 md:border-s"
+      className="hidden md:flex md:h-full md:w-80 md:shrink-0 md:flex-col md:gap-3 md:overflow-y-auto md:border-s md:border-border md:bg-card md:p-4"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-sm font-semibold">

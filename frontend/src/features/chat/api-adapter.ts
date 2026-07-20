@@ -1,6 +1,6 @@
 import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
 import { loadSettings } from "../settings/settings-storage";
-import { requestWikiPage } from "@/app/wiki-navigation";
+import { requestEditTarget } from "./target-selection";
 
 type Source = {
   id: number;
@@ -176,9 +176,11 @@ export function createApiAdapter(
         if (
           event.type === "action" &&
           event.action === "wiki-create-page" &&
-          event.result?.slug
+          typeof event.result?.id === "number"
         ) {
-          requestWikiPage(String(event.result.slug));
+          // Pin the new page as the edit target: opens the chat side panel
+          // (md+) showing it, rather than navigating away to the wiki view.
+          requestEditTarget(event.result.id);
         }
         if (event.type === "text-delta") {
           text += event.text;
