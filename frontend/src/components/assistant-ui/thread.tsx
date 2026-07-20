@@ -20,7 +20,6 @@ import {
   ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
 import { ComposerTriggerPopover } from "@/components/assistant-ui/composer-trigger-popover";
-import { DirectiveText } from "@/components/assistant-ui/directive-text";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +34,7 @@ import {
 import { CitationChip } from "@/features/chat/citation-chip";
 import { ComposerModelSelect } from "@/features/chat/composer-model-select";
 import { WikiUpdateAwareText } from "@/features/chat/proposal-card";
+import { SourcePills } from "@/features/chat/source-pills";
 import { useSourceMentions } from "@/features/chat/use-source-mentions";
 import { cn } from "@/lib/utils";
 import {
@@ -79,6 +79,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useState,
   type ComponentType,
   type FC,
@@ -250,40 +251,48 @@ const ThreadSuggestionItem: FC = () => {
   );
 };
 
-/**
- * Composer `/` commands. Selecting one triggers the real create flow directly
- * (via the `composer-actions` bridge) instead of inserting raw fence text into
- * the message box. "Propose wiki update" is intentionally absent: a proposal is
- * the assistant emitting a `wiki-update` fence (conversation-driven), not a
- * composer button.
- */
-const SLASH_COMMANDS = [
-  {
-    id: "create-page",
-    label: "Create wiki page",
-    description: "Start a new wiki page",
-    execute: () => requestNewWikiPage(),
-  },
-  {
-    id: "create-collection",
-    label: "Create collection",
-    description: "Create a new source collection",
-    execute: () => requestNewCollection(),
-  },
-];
-
 const Composer: FC = () => {
-  const { categories, onInserted: sourceOnInserted } = useSourceMentions();
+  const { categories, onSelect: sourceOnSelect } = useSourceMentions();
   const { value, setText } = unstable_useComposerInput();
 
+  // `@` runs in action mode: picking a source/target updates the selection
+  // (shown as pills above) rather than inserting directive text the textarea
+  // can't render as a chip.
   const mention = unstable_useMentionAdapter({
     categories,
     formatter: unstable_defaultDirectiveFormatter,
-    onInserted: sourceOnInserted,
   });
 
+  const slashCommands = useMemo(
+    () => [
+      {
+        id: "new-page",
+        label: "New page",
+        description: "Create a blank wiki page",
+        execute: () => requestNewWikiPage(),
+      },
+      {
+        id: "new-collection",
+        label: "New collection",
+        description: "Create a source collection",
+        execute: () => requestNewCollection(),
+      },
+      {
+        id: "create-page",
+        label: "Create page with AI",
+        description: "Draft a page from a prompt (e.g. how to build a homelab)",
+        // Inserts an instruction as text; the tool-enabled assistant drafts and
+        // creates the page. rAF so it lands after removeOnExecute strips the
+        // "/create-page" token.
+        execute: () =>
+          requestAnimationFrame(() => setText("Create a wiki page: ")),
+      },
+    ],
+    [setText],
+  );
+
   const slash = unstable_useSlashCommandAdapter({
-    commands: SLASH_COMMANDS,
+    commands: slashCommands,
     removeOnExecute: true,
   });
 
@@ -311,6 +320,7 @@ const Composer: FC = () => {
             data-slot="aui_composer-shell"
             className="border-border/60 data-[dragging=true]:border-ring focus-within:border-border dark:border-muted-foreground/15 dark:focus-within:border-muted-foreground/30 flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))] dark:shadow-none"
           >
+            <SourcePills />
             <ComposerAttachments />
             <ComposerPrimitive.Input
               placeholder="Send a message..."
@@ -327,7 +337,7 @@ const Composer: FC = () => {
         <ComposerTriggerPopover
           char="@"
           adapter={mention.adapter}
-          directive={mention.directive}
+          action={{ onExecute: sourceOnSelect, removeOnExecute: true }}
           fallbackIcon={AtSign}
         />
         <ComposerTriggerPopover
@@ -658,7 +668,7 @@ const UserMessage: FC = () => {
 
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
         <div className="aui-user-message-content peer bg-muted text-foreground rounded-xl px-4 py-2 wrap-break-word empty:hidden">
-          <MessagePrimitive.Parts components={{ Text: DirectiveText }} />
+          <MessagePrimitive.Parts />
         </div>
         <div className="aui-user-action-bar-wrapper absolute start-0 top-1/2 -translate-x-full -translate-y-1/2 pe-2 peer-empty:hidden rtl:translate-x-full">
           <UserActionBar />

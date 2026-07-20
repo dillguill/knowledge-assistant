@@ -17,6 +17,7 @@ import { useCollections } from "@/features/knowledge/use-knowledge";
 import { buildWikiTree } from "@/features/wiki/tree";
 import { NewPageDialog } from "@/features/wiki/wiki-dialogs";
 import { useWikiTree } from "@/features/wiki/use-wiki";
+import { useTargetSelection } from "./target-selection";
 
 function NewCollectionDialog({
   open,
@@ -103,6 +104,7 @@ function NewCollectionDialog({
 export function ComposerCreateDialogs() {
   const { tree: rawTree, refresh: refreshTree } = useWikiTree();
   const { refresh: refreshCollections } = useCollections();
+  const { setTargetPageId } = useTargetSelection();
   const [pageOpen, setPageOpen] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
 
@@ -121,9 +123,11 @@ export function ComposerCreateDialogs() {
         onOpenChange={setPageOpen}
         tree={tree}
         defaultFolderId={null}
-        onCreated={() => {
+        onCreated={(page) => {
           setPageOpen(false);
           refreshTree();
+          // Open the new page in the chat side panel (same as the edit flow).
+          setTargetPageId(page.id);
         }}
       />
       <NewCollectionDialog
