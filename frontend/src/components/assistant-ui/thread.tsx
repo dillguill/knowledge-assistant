@@ -19,8 +19,19 @@ import {
   ToolGroupRoot,
   ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
+import { ComposerTriggerPopover } from "@/components/assistant-ui/composer-trigger-popover";
+import { DirectiveText } from "@/components/assistant-ui/directive-text";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  requestNewCollection,
+  requestNewWikiPage,
+} from "@/app/composer-actions";
 import { CitationChip } from "@/features/chat/citation-chip";
 import { ComposerModelSelect } from "@/features/chat/composer-model-select";
 import { WikiUpdateAwareText } from "@/features/chat/proposal-card";
@@ -53,17 +64,22 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CopyIcon,
+  DatabaseIcon,
   DownloadIcon,
+  GlobeIcon,
   MicIcon,
   MoreHorizontalIcon,
   PencilIcon,
   RefreshCwIcon,
+  SlashIcon,
   SquareIcon,
+  WrenchIcon,
 } from "lucide-react";
 import {
   createContext,
   useCallback,
   useContext,
+  useState,
   type ComponentType,
   type FC,
   type PropsWithChildren,
@@ -234,11 +250,27 @@ const ThreadSuggestionItem: FC = () => {
   );
 };
 
-const MENTION_FENCE: Record<string, string> = {
-  "create-page": "```wiki-create-page\n\n\n```",
-  "create-collection": "```collection-create\n\n\n```",
-  "propose-update": "```wiki-update\n\n\n```",
-};
+/**
+ * Composer `/` commands. Selecting one triggers the real create flow directly
+ * (via the `composer-actions` bridge) instead of inserting raw fence text into
+ * the message box. "Propose wiki update" is intentionally absent: a proposal is
+ * the assistant emitting a `wiki-update` fence (conversation-driven), not a
+ * composer button.
+ */
+const SLASH_COMMANDS = [
+  {
+    id: "create-page",
+    label: "Create wiki page",
+    description: "Start a new wiki page",
+    execute: () => requestNewWikiPage(),
+  },
+  {
+    id: "create-collection",
+    label: "Create collection",
+    description: "Create a new source collection",
+    execute: () => requestNewCollection(),
+  },
+];
 
 const Composer: FC = () => {
   const { categories, onInserted: sourceOnInserted } = useSourceMentions();
@@ -251,123 +283,28 @@ const Composer: FC = () => {
   });
 
   const slash = unstable_useSlashCommandAdapter({
-    commands: [
-      {
-        id: "create-page",
-        label: "Create wiki page",
-        description: "Insert a wiki page creation fence",
-        execute: () => setText(value + "\n" + MENTION_FENCE["create-page"] + "\n"),
-      },
-      {
-        id: "create-collection",
-        label: "Create collection",
-        description: "Insert a collection creation fence",
-        execute: () => setText(value + "\n" + MENTION_FENCE["create-collection"] + "\n"),
-      },
-      {
-        id: "propose-update",
-        label: "Propose wiki update",
-        description: "Insert a wiki update proposal fence",
-        execute: () => setText(value + "\n" + MENTION_FENCE["propose-update"] + "\n"),
-      },
-    ],
+    commands: SLASH_COMMANDS,
     removeOnExecute: true,
   });
 
-  const handleAtClick = useCallback(() => {
-    setText(value + "@");
-  }, [value, setText]);
+  // The library has no API to open a trigger popover programmatically, so the
+  // tools menu inserts the trigger char and refocuses the input — best-effort:
+  // the popover opens if the char lands at the caret, and either way the user
+  // is one keystroke into the flow.
+  const insertTrigger = useCallback(
+    (char: string) => {
+      setText((value ?? "") + char);
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLTextAreaElement>("textarea.aui-composer-input")
+          ?.focus(),
+      );
+    },
+    [value, setText],
+  );
 
   return (
     <ComposerPrimitive.Unstable_TriggerPopoverRoot>
-      <ComposerPrimitive.Unstable_TriggerPopover char="@" adapter={mention.adapter}>
-        <ComposerPrimitive.Unstable_TriggerPopover.Directive
-          formatter={mention.directive.formatter}
-          onInserted={mention.directive.onInserted}
-        />
-        <div className="bg-popover text-popover-foreground z-50 min-w-56 overflow-hidden rounded-xl border p-1 shadow-lg">
-          <ComposerPrimitive.Unstable_TriggerPopoverCategories>
-            {(cats) => (
-              <div className="flex flex-col gap-0.5">
-                {cats.map((cat) => (
-                  <ComposerPrimitive.Unstable_TriggerPopoverCategoryItem
-                    key={cat.id}
-                    categoryId={cat.id}
-                    className="hover:bg-accent aria-selected:bg-accent flex items-center rounded-lg px-2.5 py-2 text-xs font-medium outline-none"
-                  >
-                    {cat.label}
-                  </ComposerPrimitive.Unstable_TriggerPopoverCategoryItem>
-                ))}
-              </div>
-            )}
-          </ComposerPrimitive.Unstable_TriggerPopoverCategories>
-          <ComposerPrimitive.Unstable_TriggerPopoverItems>
-            {(items) => (
-              <div className="flex flex-col gap-0.5">
-                {items.map((item) => (
-                  <ComposerPrimitive.Unstable_TriggerPopoverItem
-                    key={item.id}
-                    item={item}
-                    className="hover:bg-accent aria-selected:bg-accent flex flex-col rounded-lg px-2.5 py-1.5 text-xs outline-none data-highlighted:bg-accent"
-                  >
-                    <span className="font-medium">{item.label}</span>
-                    {item.description && (
-                      <span className="text-muted-foreground text-[10px]">
-                        {item.description}
-                      </span>
-                    )}
-                  </ComposerPrimitive.Unstable_TriggerPopoverItem>
-                ))}
-              </div>
-            )}
-          </ComposerPrimitive.Unstable_TriggerPopoverItems>
-        </div>
-      </ComposerPrimitive.Unstable_TriggerPopover>
-
-      <ComposerPrimitive.Unstable_TriggerPopover char="/" adapter={slash.adapter}>
-        <ComposerPrimitive.Unstable_TriggerPopover.Action
-          onExecute={slash.action.onExecute}
-          removeOnExecute={slash.action.removeOnExecute}
-        />
-        <div className="bg-popover text-popover-foreground z-50 min-w-48 overflow-hidden rounded-xl border p-1 shadow-lg">
-          <ComposerPrimitive.Unstable_TriggerPopoverCategories>
-            {(cats) => (
-              <div className="flex flex-col gap-0.5">
-                {cats.map((cat) => (
-                  <ComposerPrimitive.Unstable_TriggerPopoverCategoryItem
-                    key={cat.id}
-                    categoryId={cat.id}
-                    className="hover:bg-accent aria-selected:bg-accent flex items-center rounded-lg px-2.5 py-2 text-xs font-medium outline-none"
-                  >
-                    {cat.label}
-                  </ComposerPrimitive.Unstable_TriggerPopoverCategoryItem>
-                ))}
-              </div>
-            )}
-          </ComposerPrimitive.Unstable_TriggerPopoverCategories>
-          <ComposerPrimitive.Unstable_TriggerPopoverItems>
-            {(items) => (
-              <div className="flex flex-col gap-0.5">
-                {items.map((item) => (
-                  <ComposerPrimitive.Unstable_TriggerPopoverItem
-                    key={item.id}
-                    item={item}
-                    className="hover:bg-accent aria-selected:bg-accent flex flex-col rounded-lg px-2.5 py-1.5 text-xs outline-none data-highlighted:bg-accent"
-                  >
-                    <span className="font-medium">{item.label}</span>
-                    {item.description && (
-                      <span className="text-muted-foreground text-[10px]">
-                        {item.description}
-                      </span>
-                    )}
-                  </ComposerPrimitive.Unstable_TriggerPopoverItem>
-                ))}
-              </div>
-            )}
-          </ComposerPrimitive.Unstable_TriggerPopoverItems>
-        </div>
-      </ComposerPrimitive.Unstable_TriggerPopover>
-
       <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
         <ComposerPrimitive.AttachmentDropzone asChild>
           <div
@@ -383,32 +320,98 @@ const Composer: FC = () => {
               enterKeyHint="send"
               aria-label="Message input"
             />
-            <ComposerAction onAtClick={handleAtClick} />
+            <ComposerAction onInsertTrigger={insertTrigger} />
           </div>
         </ComposerPrimitive.AttachmentDropzone>
+
+        <ComposerTriggerPopover
+          char="@"
+          adapter={mention.adapter}
+          directive={mention.directive}
+          fallbackIcon={AtSign}
+        />
+        <ComposerTriggerPopover
+          char="/"
+          adapter={slash.adapter}
+          action={slash.action}
+          fallbackIcon={SlashIcon}
+        />
       </ComposerPrimitive.Root>
     </ComposerPrimitive.Unstable_TriggerPopoverRoot>
   );
 };
 
-const ComposerAction: FC<{ onAtClick: () => void }> = ({ onAtClick }) => {
+/** The composer "tools" menu — a discoverability surface for composer
+ * affordances. Mention/Commands seed their trigger char; Web search is a
+ * placeholder for an upcoming capability. */
+const ComposerToolsMenu: FC<{ onInsertTrigger: (char: string) => void }> = ({
+  onInsertTrigger,
+}) => {
+  const [open, setOpen] = useState(false);
+  const pick = (char: string) => {
+    setOpen(false);
+    onInsertTrigger(char);
+  };
+  const itemClass =
+    "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent disabled:pointer-events-none disabled:opacity-50";
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="size-7 rounded-md"
+          aria-label="Tools"
+          title="Tools"
+        >
+          <WrenchIcon className="size-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        className="w-56 p-1"
+      >
+        <button type="button" className={itemClass} onClick={() => pick("@")}>
+          <AtSign className="text-muted-foreground size-4" />
+          <span>Mention sources</span>
+          <kbd className="text-muted-foreground ms-auto text-xs">@</kbd>
+        </button>
+        <button type="button" className={itemClass} onClick={() => pick("/")}>
+          <SlashIcon className="text-muted-foreground size-4" />
+          <span>Commands</span>
+          <kbd className="text-muted-foreground ms-auto text-xs">/</kbd>
+        </button>
+        <button type="button" className={itemClass} disabled>
+          <GlobeIcon className="text-muted-foreground size-4" />
+          <span>Web search</span>
+          <span className="bg-muted text-muted-foreground ms-auto rounded px-1.5 py-0.5 text-[10px] font-medium">
+            Planned
+          </span>
+        </button>
+        <button type="button" className={itemClass} disabled>
+          <DatabaseIcon className="text-muted-foreground size-4" />
+          <span>RAG</span>
+          <span className="bg-muted text-muted-foreground ms-auto rounded px-1.5 py-0.5 text-[10px] font-medium">
+            Planned
+          </span>
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
+const ComposerAction: FC<{ onInsertTrigger: (char: string) => void }> = ({
+  onInsertTrigger,
+}) => {
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
       <div className="flex items-center gap-2">
         <ComposerAddAttachment />
         <ComposerModelSelect />
-        <TooltipIconButton
-          tooltip="Mention a source (@)"
-          side="bottom"
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-7 rounded-full"
-          aria-label="Mention a source"
-          onClick={onAtClick}
-        >
-          <AtSign className="size-4" />
-        </TooltipIconButton>
+        <ComposerToolsMenu onInsertTrigger={onInsertTrigger} />
       </div>
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>
@@ -655,7 +658,7 @@ const UserMessage: FC = () => {
 
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
         <div className="aui-user-message-content peer bg-muted text-foreground rounded-xl px-4 py-2 wrap-break-word empty:hidden">
-          <MessagePrimitive.Parts />
+          <MessagePrimitive.Parts components={{ Text: DirectiveText }} />
         </div>
         <div className="aui-user-action-bar-wrapper absolute start-0 top-1/2 -translate-x-full -translate-y-1/2 pe-2 peer-empty:hidden rtl:translate-x-full">
           <UserActionBar />

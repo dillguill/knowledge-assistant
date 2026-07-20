@@ -5,6 +5,7 @@ import { onWikiNavigationRequest } from "@/app/wiki-navigation";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatPage } from "@/features/chat/chat-page";
+import { ComposerCreateDialogs } from "@/features/chat/composer-create-dialogs";
 import { ChatProvider } from "@/features/chat/chat-provider";
 import { TopbarStatus } from "@/features/chat/topbar-status";
 import { DocumentsPage } from "@/features/knowledge/documents-page";
@@ -69,6 +70,9 @@ function App() {
               />
             )}
           </AppShell>
+          {/* Create-page/collection dialogs triggered by chat `/` commands —
+              mounted here so they overlay the active view without navigating. */}
+          <ComposerCreateDialogs />
         </ChatProvider>
       </TooltipProvider>
     </SettingsProvider>
