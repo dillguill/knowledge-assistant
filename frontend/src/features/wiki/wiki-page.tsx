@@ -5,6 +5,7 @@ import { buildWikiLinkResolver, buildWikiTree, type WikiFolderNode, type WikiFol
 import { useWikiTree } from "./use-wiki";
 import { FolderView } from "./folder-view";
 import { WikiPageView } from "./page-view";
+import { ProposalsInbox, usePendingProposalCount } from "./proposals-inbox";
 import {
   DeleteConfirmDialog,
   MoveDialog,
@@ -15,7 +16,8 @@ import {
 
 type WikiRoute =
   | { kind: "folder"; id: number | null }
-  | { kind: "page"; slug: string; edit?: boolean };
+  | { kind: "page"; slug: string; edit?: boolean }
+  | { kind: "proposals" };
 
 type FolderDialog = null | "new-page" | "new-folder" | "rename" | "move" | "delete";
 
@@ -149,6 +151,9 @@ export function WikiPage({
   const { tree: rawTree, refresh: refreshTree } = useWikiTree();
   const [route, setRoute] = useState<WikiRoute>({ kind: "folder", id: null });
   const isOwner = Boolean(loadSettings().ownerToken);
+  // Visible to visitors too (read-only pending count) — fetched independently
+  // of `ProposalsInbox` itself so the badge shows without opening the inbox.
+  const pendingCount = usePendingProposalCount();
 
   const tree = useMemo(() => buildWikiTree(rawTree.folders, rawTree.pages), [rawTree]);
   const resolve = useMemo(() => buildWikiLinkResolver(rawTree.pages), [rawTree]);
@@ -176,10 +181,28 @@ export function WikiPage({
     );
   }
 
+  if (route.kind === "proposals") {
+    return (
+      <div className="h-full overflow-y-auto px-6 py-6">
+        <div className="mx-auto mb-4 flex max-w-3xl">
+          <Button size="sm" variant="ghost" onClick={() => onNavigateFolder(null)}>
+            ← Back to wiki
+          </Button>
+        </div>
+        <ProposalsInbox onApproved={onNavigatePage} />
+      </div>
+    );
+  }
+
   const node = route.id !== null ? (tree.byId.get(route.id) ?? null) : null;
 
   return (
     <div className="h-full overflow-y-auto px-6 py-6">
+      <div className="mx-auto mb-4 flex max-w-3xl justify-end">
+        <Button size="sm" variant="outline" onClick={() => setRoute({ kind: "proposals" })}>
+          Proposals{pendingCount > 0 ? ` (${pendingCount})` : ""}
+        </Button>
+      </div>
       {isOwner && (
         <FolderToolbar
           folderId={route.id}
