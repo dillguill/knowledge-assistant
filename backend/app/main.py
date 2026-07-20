@@ -24,8 +24,8 @@ def _startup() -> None:
     """
     settings = get_settings()
     store.init_db(settings.data_dir)
-    wiki_store.init_wiki(settings.data_dir)
     sync.pull()
+    wiki_store.init_wiki(settings.data_dir)
     seed_demo_corpus()
     seed_wiki()
 
