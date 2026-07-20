@@ -8,9 +8,12 @@ type Source = {
   slug?: string;
 };
 
+export type ChatTarget = { page_id: number; title: string; slug: string };
+
 type SseEvent =
   | { type: "text-delta"; text: string }
   | { type: "sources"; sources: Source[] }
+  | { type: "target"; target: ChatTarget }
   | { type: "error"; code: string; message: string; retry_after?: number };
 
 export class ChatError extends Error {
@@ -95,6 +98,8 @@ export function createApiAdapter(
   baseUrl: string,
   getModel: () => string | null,
   getSourceConfig: () => SourceConfig = NO_SOURCES,
+  getTargetPageId: () => number | null = () => null,
+  onTarget?: (target: ChatTarget) => void,
 ): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal, context }) {
@@ -103,6 +108,7 @@ export function createApiAdapter(
         apiMessages.unshift({ role: "system", content: context.system });
       }
       const source = getSourceConfig();
+      const targetPageId = getTargetPageId();
       const attachmentIds = [
         ...messages
           .flatMap((m) => m.attachments ?? [])
@@ -110,13 +116,19 @@ export function createApiAdapter(
           .filter(Number.isFinite),
         ...source.attachmentIds,
       ];
+      // A page picked as the Target must never also ride along as a plain
+      // wiki source — the backend already pins its full content via
+      // target_page_id, so including it in wiki_page_ids too would just
+      // duplicate it in the source-context block.
+      const wikiPageIds = source.wikiPageIds.filter((id) => id !== targetPageId);
       const body: Record<string, unknown> = {
         model: getModel(),
         messages: apiMessages,
       };
       if (source.collectionIds.length) body.collection_ids = source.collectionIds;
       if (attachmentIds.length) body.attachment_ids = attachmentIds;
-      if (source.wikiPageIds.length) body.wiki_page_ids = source.wikiPageIds;
+      if (wikiPageIds.length) body.wiki_page_ids = wikiPageIds;
+      if (targetPageId !== null) body.target_page_id = targetPageId;
       const response = await fetch(`${baseUrl}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,6 +160,9 @@ export function createApiAdapter(
             errorCopy(event, getModel()),
             event.retry_after,
           );
+        }
+        if (event.type === "target") {
+          onTarget?.(event.target);
         }
         if (event.type === "sources") sources = event.sources;
         if (event.type === "text-delta") {

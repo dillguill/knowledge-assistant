@@ -6,6 +6,7 @@ import type { WikiPageSummary } from "@/features/wiki/api";
 import { cn } from "@/lib/utils";
 import { useBackend } from "./chat-provider";
 import { useSourceSelection } from "./source-selection";
+import { useTargetSelection } from "./target-selection";
 
 /** Every page id nested under a folder (its own pages plus every descendant
  * subfolder's pages) — what checking the folder's box selects/deselects. */
@@ -17,20 +18,39 @@ function WikiPageRow({
   page,
   checked,
   onToggle,
+  isTarget,
+  onSetTarget,
 }: {
   page: WikiPageSummary;
   checked: boolean;
   onToggle: (id: number, checked: boolean) => void;
+  isTarget: boolean;
+  onSetTarget: (id: number | null) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 pl-4 text-xs hover:bg-accent">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onToggle(page.id, e.target.checked)}
-      />
-      <span className="truncate">{page.title}</span>
-    </label>
+    <div className="flex items-center gap-1 rounded px-2 py-1.5 pl-4 text-xs hover:bg-accent">
+      <label className="flex flex-1 cursor-pointer items-center gap-2">
+        <input
+          type="checkbox"
+          checked={checked && !isTarget}
+          disabled={isTarget}
+          onChange={(e) => onToggle(page.id, e.target.checked)}
+        />
+        <span className="truncate">{page.title}</span>
+      </label>
+      <button
+        type="button"
+        onClick={() => onSetTarget(isTarget ? null : page.id)}
+        className={cn(
+          "shrink-0 rounded px-1.5 py-0.5 text-[10px]",
+          isTarget
+            ? "bg-primary text-primary-foreground"
+            : "border border-border text-muted-foreground hover:border-primary",
+        )}
+      >
+        {isTarget ? "Target ✓" : "Set target"}
+      </button>
+    </div>
   );
 }
 
@@ -39,11 +59,15 @@ function WikiFolderGroup({
   wikiPageIds,
   onTogglePage,
   onToggleFolder,
+  targetPageId,
+  onSetTarget,
 }: {
   folder: WikiFolderNode;
   wikiPageIds: number[];
   onTogglePage: (id: number, checked: boolean) => void;
   onToggleFolder: (ids: number[], checked: boolean) => void;
+  targetPageId: number | null;
+  onSetTarget: (id: number | null) => void;
 }) {
   const pageIds = useMemo(() => collectPageIds(folder), [folder]);
   const allSelected = pageIds.length > 0 && pageIds.every((id) => wikiPageIds.includes(id));
@@ -66,6 +90,8 @@ function WikiFolderGroup({
             page={p}
             checked={wikiPageIds.includes(p.id)}
             onToggle={onTogglePage}
+            isTarget={targetPageId === p.id}
+            onSetTarget={onSetTarget}
           />
         ))}
         {folder.children.map((child) => (
@@ -75,6 +101,8 @@ function WikiFolderGroup({
             wikiPageIds={wikiPageIds}
             onTogglePage={onTogglePage}
             onToggleFolder={onToggleFolder}
+            targetPageId={targetPageId}
+            onSetTarget={onSetTarget}
           />
         ))}
       </div>
@@ -90,6 +118,7 @@ export function SourceSelector() {
   const status = useBackend();
   const { collectionIds, setCollectionIds, wikiPageIds, setWikiPageIds } =
     useSourceSelection();
+  const { targetPageId, setTargetPageId } = useTargetSelection();
   const { collections } = useCollections();
   const { tree: rawTree } = useWikiTree();
   const [open, setOpen] = useState(false);
@@ -119,6 +148,16 @@ export function SourceSelector() {
         ? [...new Set([...wikiPageIds, ...ids])]
         : wikiPageIds.filter((x) => !ids.includes(x)),
     );
+  }
+
+  // Setting a page as Target also drops it out of the plain source
+  // checkboxes so the UI never shows it double-selected (the request body
+  // itself is also guarded against this in api-adapter, independently).
+  function handleSetTarget(id: number | null) {
+    setTargetPageId(id);
+    if (id !== null && wikiPageIds.includes(id)) {
+      setWikiPageIds(wikiPageIds.filter((x) => x !== id));
+    }
   }
 
   return (
@@ -174,6 +213,8 @@ export function SourceSelector() {
                   page={p}
                   checked={wikiPageIds.includes(p.id)}
                   onToggle={toggleWikiPage}
+                  isTarget={targetPageId === p.id}
+                  onSetTarget={handleSetTarget}
                 />
               ))}
               {wikiTree.roots.map((f) => (
@@ -183,6 +224,8 @@ export function SourceSelector() {
                   wikiPageIds={wikiPageIds}
                   onTogglePage={toggleWikiPage}
                   onToggleFolder={toggleWikiFolder}
+                  targetPageId={targetPageId}
+                  onSetTarget={handleSetTarget}
                 />
               ))}
             </div>

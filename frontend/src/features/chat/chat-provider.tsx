@@ -14,6 +14,7 @@ import { BackendAttachmentAdapter } from "./backend-attachment-adapter";
 import { demoAdapter } from "./demo-adapter";
 import { GlobalInstructions } from "./global-instructions";
 import { SourceSelectionProvider, sourceRef, wikiSourceRef } from "./source-selection";
+import { bumpTargetRefresh, TargetSelectionProvider, targetRef } from "./target-selection";
 import { browserThreadStorage, STORAGE_PREFIX } from "./thread-storage";
 import { useBackendStatus, type BackendStatus } from "./use-backend-status";
 
@@ -40,11 +41,19 @@ export function useBackend() {
 const modelRef = { current: null as string | null };
 
 const chatAdapter = API_URL
-  ? createApiAdapter(API_URL, () => modelRef.current, () => ({
-      collectionIds: sourceRef.current,
-      attachmentIds: [],
-      wikiPageIds: wikiSourceRef.current,
-    }))
+  ? createApiAdapter(
+      API_URL,
+      () => modelRef.current,
+      () => ({
+        collectionIds: sourceRef.current,
+        attachmentIds: [],
+        wikiPageIds: wikiSourceRef.current,
+      }),
+      () => targetRef.current,
+      // Each turn in target mode re-confirms the pinned page; refresh the
+      // panel so edits made elsewhere (or a just-approved proposal) show up.
+      () => bumpTargetRefresh(),
+    )
   : demoAdapter;
 
 const attachments = API_URL
@@ -85,7 +94,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       <GlobalInstructions />
       <StatusContext.Provider value={status}>
         <ModelContext.Provider value={{ model, setModel }}>
-          <SourceSelectionProvider>{children}</SourceSelectionProvider>
+          <SourceSelectionProvider>
+            <TargetSelectionProvider>{children}</TargetSelectionProvider>
+          </SourceSelectionProvider>
         </ModelContext.Provider>
       </StatusContext.Provider>
     </AssistantRuntimeProvider>

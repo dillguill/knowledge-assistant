@@ -182,6 +182,73 @@ test("includes wiki page ids in the request body when selected", async () => {
   vi.unstubAllGlobals();
 });
 
+test("includes target_page_id in the request body when a target is set", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter(
+    "https://api.test",
+    () => null,
+    () => ({ collectionIds: [], attachmentIds: [], wikiPageIds: [] }),
+    () => 9,
+  );
+  await drain(run(adapter));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.target_page_id).toBe(9);
+  vi.unstubAllGlobals();
+});
+
+test("a page picked as the target is never also sent inside wiki_page_ids", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const adapter = createApiAdapter(
+    "https://api.test",
+    () => null,
+    () => ({ collectionIds: [], attachmentIds: [], wikiPageIds: [5, 9] }),
+    () => 9,
+  );
+  await drain(run(adapter));
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.target_page_id).toBe(9);
+  expect(body.wiki_page_ids).toEqual([5]);
+  vi.unstubAllGlobals();
+});
+
+test("a target SSE event invokes the onTarget callback and isn't treated as text", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      sseResponse([
+        JSON.stringify({
+          type: "target",
+          target: { page_id: 4, title: "Setup", slug: "setup" },
+        }),
+        JSON.stringify({ type: "text-delta", text: "ok" }),
+        "[DONE]",
+      ]),
+    ),
+  );
+  const onTarget = vi.fn();
+  const adapter = createApiAdapter(
+    "https://api.test",
+    () => null,
+    () => ({ collectionIds: [], attachmentIds: [], wikiPageIds: [] }),
+    () => 4,
+    onTarget,
+  );
+  let finalText = "";
+  for await (const chunk of run(adapter)) {
+    const part = chunk.content[0];
+    if (part?.type === "text" && part.text) finalText = part.text;
+  }
+  expect(finalText).toBe("ok");
+  expect(onTarget).toHaveBeenCalledWith({ page_id: 4, title: "Setup", slug: "setup" });
+  vi.unstubAllGlobals();
+});
+
 test("sources event becomes source content parts", async () => {
   vi.stubGlobal(
     "fetch",

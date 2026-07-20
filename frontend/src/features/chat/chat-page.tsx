@@ -1,5 +1,7 @@
 import { Thread } from "@/components/assistant-ui/thread";
 import { useBackend } from "./chat-provider";
+import { TargetPanel } from "./target-panel";
+import { useTargetSelection } from "./target-selection";
 
 const BANNERS: Partial<Record<string, string>> = {
   demo: "Demo mode — replies are canned until a backend is configured. Nothing you type leaves this page.",
@@ -12,6 +14,7 @@ const BANNERS: Partial<Record<string, string>> = {
 export function ChatPage() {
   const status = useBackend();
   const banner = BANNERS[status];
+  const { targetPageId } = useTargetSelection();
   return (
     <div className="flex h-full flex-col">
       {banner && (
@@ -19,8 +22,11 @@ export function ChatPage() {
           {banner}
         </p>
       )}
-      <div className="min-h-0 flex-1">
-        <Thread />
+      <div className="flex min-h-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1">
+          <Thread />
+        </div>
+        {targetPageId !== null && <TargetPanel />}
       </div>
     </div>
   );
