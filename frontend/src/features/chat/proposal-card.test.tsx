@@ -4,6 +4,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { ProposalCard, DraftingProposalPlaceholder } from "./proposal-card";
 import * as wikiApi from "@/features/wiki/api";
 import * as targetSelection from "./target-selection";
+import { SettingsProvider } from "@/features/settings/settings-provider";
 import { SETTINGS_KEY } from "@/features/settings/settings-storage";
 
 const targetPage: wikiApi.WikiPage = {
@@ -29,7 +30,7 @@ test("shows the compact drafting placeholder while the fence is still streaming"
 });
 
 test("renders a diff of the proposed content against the current target page content", () => {
-  render(<ProposalCard content={"new line\n"} targetPage={targetPage} />);
+  render(<SettingsProvider><ProposalCard content={"new line\n"} targetPage={targetPage} /></SettingsProvider>);
   expect(screen.getByText("old line")).toBeInTheDocument();
   expect(screen.getByText("new line")).toBeInTheDocument();
   expect(document.querySelector('[data-type="del"]')).toBeInTheDocument();
@@ -52,7 +53,7 @@ test("Propose posts page_id/title/folder_id/content and citations from the messa
   });
   const user = userEvent.setup();
   const citations = [{ id: 3, label: "S1", filename: "manual.pdf" }];
-  render(<ProposalCard content={"new line\n"} targetPage={targetPage} citations={citations} />);
+  render(<SettingsProvider><ProposalCard content={"new line\n"} targetPage={targetPage} citations={citations} /></SettingsProvider>);
 
   await user.click(screen.getByRole("button", { name: "Propose" }));
 
@@ -81,7 +82,7 @@ test("citations default to an empty array when the message had no sources event"
     decided_at: null,
   });
   const user = userEvent.setup();
-  render(<ProposalCard content={"new line\n"} targetPage={targetPage} />);
+  render(<SettingsProvider><ProposalCard content={"new line\n"} targetPage={targetPage} /></SettingsProvider>);
   await user.click(screen.getByRole("button", { name: "Propose" }));
   expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ citations: [] }));
 });
@@ -91,13 +92,13 @@ test("a 429 (queue full) response surfaces the queue-full copy", async () => {
     new Error("Rate limited — wait a moment and retry."),
   );
   const user = userEvent.setup();
-  render(<ProposalCard content={"new line\n"} targetPage={targetPage} />);
+  render(<SettingsProvider><ProposalCard content={"new line\n"} targetPage={targetPage} /></SettingsProvider>);
   await user.click(screen.getByRole("button", { name: "Propose" }));
   expect(await screen.findByText(/proposal queue is full/i)).toBeInTheDocument();
 });
 
 test("a visitor (no owner token) sees no Approve now button", () => {
-  render(<ProposalCard content={"new line\n"} targetPage={targetPage} />);
+  render(<SettingsProvider><ProposalCard content={"new line\n"} targetPage={targetPage} /></SettingsProvider>);
   expect(screen.queryByRole("button", { name: "Approve now" })).not.toBeInTheDocument();
 });
 
@@ -122,7 +123,7 @@ test("owner Approve now chains create then approve, and refreshes the target pan
   });
   const bumpSpy = vi.spyOn(targetSelection, "bumpTargetRefresh").mockImplementation(() => {});
   const user = userEvent.setup();
-  render(<ProposalCard content={"new line\n"} targetPage={targetPage} />);
+  render(<SettingsProvider><ProposalCard content={"new line\n"} targetPage={targetPage} /></SettingsProvider>);
 
   await user.click(screen.getByRole("button", { name: "Approve now" }));
 
@@ -135,7 +136,7 @@ test("owner Approve now chains create then approve, and refreshes the target pan
 test("Dismiss removes the card without calling any API", async () => {
   const createSpy = vi.spyOn(wikiApi, "createProposal");
   const user = userEvent.setup();
-  render(<ProposalCard content={"new line\n"} targetPage={targetPage} />);
+  render(<SettingsProvider><ProposalCard content={"new line\n"} targetPage={targetPage} /></SettingsProvider>);
 
   await user.click(screen.getByRole("button", { name: "Dismiss" }));
 

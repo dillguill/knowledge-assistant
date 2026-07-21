@@ -37,6 +37,7 @@ import { EditPagePicker } from "@/features/chat/edit-page-picker";
 import { WikiUpdateAwareText } from "@/features/chat/proposal-card";
 import { SourcePills } from "@/features/chat/source-pills";
 import { useSourceMentions } from "@/features/chat/use-source-mentions";
+import { useSettings } from "@/features/settings/settings-provider";
 import { cn } from "@/lib/utils";
 import {
   ActionBarMorePrimitive,
@@ -256,6 +257,8 @@ const Composer: FC = () => {
   const { categories, onSelect: sourceOnSelect } = useSourceMentions();
   const { value, setText } = unstable_useComposerInput();
   const [editPickerOpen, setEditPickerOpen] = useState(false);
+  const { ownerToken } = useSettings();
+  const isOwner = Boolean(ownerToken);
 
   // `@` runs in action mode: picking a source/target updates the selection
   // (shown as pills above) rather than inserting directive text the textarea
@@ -266,37 +269,43 @@ const Composer: FC = () => {
   });
 
   const slashCommands = useMemo(
-    () => [
-      {
-        id: "new-page",
-        label: "New page",
-        description: "Create a blank wiki page",
-        execute: () => requestNewWikiPage(),
-      },
-      {
-        id: "new-collection",
-        label: "New collection",
-        description: "Create a source collection",
-        execute: () => requestNewCollection(),
-      },
-      {
-        id: "create-page",
-        label: "Create page with AI",
-        description: "Draft a page from a prompt (e.g. how to build a homelab)",
-        // Inserts an instruction as text; the tool-enabled assistant drafts and
-        // creates the page. rAF so it lands after removeOnExecute strips the
-        // "/create-page" token.
-        execute: () =>
-          requestAnimationFrame(() => setText("Create a wiki page: ")),
-      },
-      {
-        id: "edit-page",
-        label: "Edit page",
-        description: "Pick a page to edit in the side panel",
-        execute: () => setEditPickerOpen(true),
-      },
-    ],
-    [setText],
+    () => {
+      const commands = [
+        {
+          id: "edit-page",
+          label: "Edit page",
+          description: "Pick a page to edit in the side panel",
+          execute: () => setEditPickerOpen(true),
+        },
+      ] as { id: string; label: string; description: string; execute: () => void }[];
+
+      if (isOwner) {
+        commands.push(
+          {
+            id: "new-page",
+            label: "New page",
+            description: "Create a blank wiki page",
+            execute: () => requestNewWikiPage(),
+          },
+          {
+            id: "new-collection",
+            label: "New collection",
+            description: "Create a source collection",
+            execute: () => requestNewCollection(),
+          },
+          {
+            id: "create-page",
+            label: "Create page with AI",
+            description: "Draft a page from a prompt (e.g. how to build a homelab)",
+            execute: () =>
+              requestAnimationFrame(() => setText("Create a wiki page: ")),
+          },
+        );
+      }
+
+      return commands;
+    },
+    [setText, isOwner],
   );
 
   const slash = unstable_useSlashCommandAdapter({

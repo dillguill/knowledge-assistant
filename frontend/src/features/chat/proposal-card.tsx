@@ -2,7 +2,7 @@ import { useState } from "react";
 import { DiffViewer } from "@/components/assistant-ui/diff-viewer";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { Button } from "@/components/ui/button";
-import { loadSettings } from "@/features/settings/settings-storage";
+import { useSettings } from "@/features/settings/settings-provider";
 import { diffToHunks, hunksToPatch } from "@/features/wiki/diff";
 import { approveProposal, createProposal, type WikiPage } from "@/features/wiki/api";
 import { WikiMarkdown, type WikiLinkResolver } from "@/features/wiki/wiki-markdown";
@@ -44,7 +44,8 @@ export function ProposalCard({
   citations?: unknown[];
 }) {
   const [status, setStatus] = useState<CardStatus>({ kind: "idle" });
-  const isOwner = Boolean(loadSettings().ownerToken);
+  const { ownerToken } = useSettings();
+  const isOwner = Boolean(ownerToken);
 
   if (status.kind === "dismissed") return null;
 

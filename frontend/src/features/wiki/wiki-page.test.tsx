@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { WikiPage } from "./wiki-page";
 import * as api from "./api";
+import { SettingsProvider } from "@/features/settings/settings-provider";
 import { SETTINGS_KEY } from "@/features/settings/settings-storage";
 
 beforeEach(() => {
@@ -27,7 +28,7 @@ test("root view shows folder cards and root pages", async () => {
       },
     ],
   });
-  render(<WikiPage />);
+  render(<SettingsProvider><WikiPage /></SettingsProvider>);
   expect(await screen.findByRole("button", { name: /guides/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /welcome/i })).toBeInTheDocument();
 });
@@ -51,7 +52,7 @@ test("opening a folder shows a breadcrumb, its subfolders, and its pages with up
     ],
   });
   const user = userEvent.setup();
-  render(<WikiPage />);
+  render(<SettingsProvider><WikiPage /></SettingsProvider>);
   await user.click(await screen.findByRole("button", { name: /guides/i }));
 
   const breadcrumb = screen.getByRole("navigation", { name: /breadcrumb/i });
@@ -69,7 +70,7 @@ test("an empty folder shows a plain message to a visitor (no owner token)", asyn
     pages: [],
   });
   const user = userEvent.setup();
-  render(<WikiPage />);
+  render(<SettingsProvider><WikiPage /></SettingsProvider>);
   await user.click(await screen.findByRole("button", { name: /empty/i }));
   expect(await screen.findByText("Nothing here yet.")).toBeInTheDocument();
 });
@@ -81,7 +82,7 @@ test("an empty folder shows owner-oriented copy when an owner token is set", asy
     pages: [],
   });
   const user = userEvent.setup();
-  render(<WikiPage />);
+  render(<SettingsProvider><WikiPage /></SettingsProvider>);
   await user.click(await screen.findByRole("button", { name: /empty/i }));
   expect(
     await screen.findByText(/nothing here yet\. pages and folders you add/i),
@@ -115,14 +116,14 @@ test("opening a page renders its content via WikiMarkdown", async () => {
     last_version: { author: "owner", created_at: "2026-07-01", note: "" },
   });
   const user = userEvent.setup();
-  render(<WikiPage />);
+  render(<SettingsProvider><WikiPage /></SettingsProvider>);
   await user.click(await screen.findByRole("button", { name: /welcome/i }));
   expect(await screen.findByRole("heading", { name: "Hello wiki" })).toBeInTheDocument();
 });
 
 test("a visitor sees no New page / New folder buttons at the wiki root", async () => {
   vi.spyOn(api, "getTree").mockResolvedValue({ folders: [], pages: [] });
-  render(<WikiPage />);
+  render(<SettingsProvider><WikiPage /></SettingsProvider>);
   await screen.findByText("Nothing here yet.");
   expect(screen.queryByRole("button", { name: /new page/i })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /new folder/i })).not.toBeInTheDocument();
@@ -154,7 +155,7 @@ test("an owner can create a new page, which navigates straight to its editor", a
     last_version: null,
   });
   const user = userEvent.setup();
-  render(<WikiPage />);
+  render(<SettingsProvider><WikiPage /></SettingsProvider>);
 
   await user.click(await screen.findByRole("button", { name: /^new page$/i }));
   await user.type(await screen.findByPlaceholderText("Page title"), "New page");

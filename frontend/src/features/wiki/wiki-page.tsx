@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { loadSettings } from "@/features/settings/settings-storage";
+import { useSettings } from "@/features/settings/settings-provider";
 import { buildWikiLinkResolver, buildWikiTree, type WikiFolderNode, type WikiFolderTree } from "./tree";
 import { useWikiTree } from "./use-wiki";
 import { FolderView } from "./folder-view";
@@ -150,7 +150,8 @@ export function WikiPage({
 } = {}) {
   const { tree: rawTree, refresh: refreshTree } = useWikiTree();
   const [route, setRoute] = useState<WikiRoute>({ kind: "folder", id: null });
-  const isOwner = Boolean(loadSettings().ownerToken);
+  const { ownerToken } = useSettings();
+  const isOwner = Boolean(ownerToken);
   // Visible to visitors too (read-only pending count) — fetched independently
   // of `ProposalsInbox` itself so the badge shows without opening the inbox.
   const pendingCount = usePendingProposalCount();

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { loadSettings } from "@/features/settings/settings-storage";
+import { useSettings } from "@/features/settings/settings-provider";
 import { updatePage } from "./api";
 import { useWikiPage } from "./use-wiki";
 import { WikiMarkdown, type WikiLinkResolver } from "./wiki-markdown";
@@ -41,7 +41,8 @@ export function WikiPageView({
   onNavigatePage: (slug: string) => void;
 }) {
   const { page, refresh } = useWikiPage(slug);
-  const isOwner = Boolean(loadSettings().ownerToken);
+  const { ownerToken } = useSettings();
+  const isOwner = Boolean(ownerToken);
 
   const [mode, setMode] = useState<"view" | "edit">(startInEdit ? "edit" : "view");
   const [draft, setDraft] = useState("");

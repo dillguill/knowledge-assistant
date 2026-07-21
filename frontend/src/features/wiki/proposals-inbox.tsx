@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { DiffViewer } from "@/components/assistant-ui/diff-viewer";
 import { Button } from "@/components/ui/button";
-import { loadSettings } from "@/features/settings/settings-storage";
+import { useSettings } from "@/features/settings/settings-provider";
 import { approveProposal, rejectProposal, type WikiProposal } from "./api";
 import { diffToHunks, hunksToPatch } from "./diff";
 import { useWikiProposals } from "./use-wiki";
@@ -22,7 +22,8 @@ export function ProposalsInbox({
   onApproved?: (slug: string) => void;
 }) {
   const { proposals, refresh } = useWikiProposals("pending");
-  const isOwner = Boolean(loadSettings().ownerToken);
+  const { ownerToken } = useSettings();
+  const isOwner = Boolean(ownerToken);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

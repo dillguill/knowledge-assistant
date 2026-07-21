@@ -4,6 +4,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { TargetPanel } from "./target-panel";
 import { TargetSelectionProvider, TARGET_STORAGE_KEY } from "./target-selection";
 import * as wikiApi from "@/features/wiki/api";
+import { SettingsProvider } from "@/features/settings/settings-provider";
 import { SETTINGS_KEY } from "@/features/settings/settings-storage";
 
 beforeEach(() => {
@@ -25,9 +26,11 @@ const page: wikiApi.WikiPage = {
 
 function renderPanel() {
   return render(
-    <TargetSelectionProvider>
-      <TargetPanel />
-    </TargetSelectionProvider>,
+    <SettingsProvider>
+      <TargetSelectionProvider>
+        <TargetPanel />
+      </TargetSelectionProvider>
+    </SettingsProvider>,
   );
 }
 

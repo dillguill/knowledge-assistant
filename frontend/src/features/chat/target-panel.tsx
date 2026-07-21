@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { loadSettings } from "@/features/settings/settings-storage";
+import { useSettings } from "@/features/settings/settings-provider";
 import { updatePage } from "@/features/wiki/api";
 import { PageEditor } from "@/features/wiki/page-editor";
 import { WikiMarkdown, type WikiLinkResolver } from "@/features/wiki/wiki-markdown";
@@ -30,7 +30,8 @@ export function TargetPanel() {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const isOwner = Boolean(loadSettings().ownerToken);
+  const { ownerToken } = useSettings();
+  const isOwner = Boolean(ownerToken);
 
   if (targetPageId === null) return null;
 

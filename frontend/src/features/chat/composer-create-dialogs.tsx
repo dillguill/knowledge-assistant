@@ -17,6 +17,7 @@ import { useCollections } from "@/features/knowledge/use-knowledge";
 import { buildWikiTree } from "@/features/wiki/tree";
 import { NewPageDialog } from "@/features/wiki/wiki-dialogs";
 import { useWikiTree } from "@/features/wiki/use-wiki";
+import { useSettings } from "@/features/settings/settings-provider";
 import { useTargetSelection } from "./target-selection";
 
 function NewCollectionDialog({
@@ -105,6 +106,8 @@ export function ComposerCreateDialogs() {
   const { tree: rawTree, refresh: refreshTree } = useWikiTree();
   const { refresh: refreshCollections } = useCollections();
   const { setTargetPageId } = useTargetSelection();
+  const { ownerToken } = useSettings();
+  const isOwner = Boolean(ownerToken);
   const [pageOpen, setPageOpen] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
 
@@ -113,8 +116,14 @@ export function ComposerCreateDialogs() {
     [rawTree],
   );
 
-  useEffect(() => onNewWikiPageRequest(() => setPageOpen(true)), []);
-  useEffect(() => onNewCollectionRequest(() => setCollectionOpen(true)), []);
+  useEffect(() => {
+    if (!isOwner) return;
+    return onNewWikiPageRequest(() => setPageOpen(true));
+  }, [isOwner]);
+  useEffect(() => {
+    if (!isOwner) return;
+    return onNewCollectionRequest(() => setCollectionOpen(true));
+  }, [isOwner]);
 
   return (
     <>

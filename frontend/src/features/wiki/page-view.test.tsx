@@ -5,6 +5,7 @@ import { WikiPageView } from "./page-view";
 import * as api from "./api";
 import type { WikiPage } from "./api";
 import type { WikiFolderTree } from "./tree";
+import { SettingsProvider } from "@/features/settings/settings-provider";
 import { SETTINGS_KEY } from "@/features/settings/settings-storage";
 
 const EMPTY_TREE: WikiFolderTree = { roots: [], rootPages: [], byId: new Map() };
@@ -29,14 +30,16 @@ function renderPage(overrides: Partial<Parameters<typeof WikiPageView>[0]> = {})
   const onNavigateFolder = vi.fn();
   const onNavigatePage = vi.fn();
   const utils = render(
-    <WikiPageView
-      slug="welcome"
-      tree={EMPTY_TREE}
-      resolve={noResolve}
-      onNavigateFolder={onNavigateFolder}
-      onNavigatePage={onNavigatePage}
-      {...overrides}
-    />,
+    <SettingsProvider>
+      <WikiPageView
+        slug="welcome"
+        tree={EMPTY_TREE}
+        resolve={noResolve}
+        onNavigateFolder={onNavigateFolder}
+        onNavigatePage={onNavigatePage}
+        {...overrides}
+      />
+    </SettingsProvider>,
   );
   return { ...utils, onNavigateFolder, onNavigatePage };
 }
