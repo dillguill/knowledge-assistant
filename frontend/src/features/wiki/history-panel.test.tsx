@@ -31,7 +31,7 @@ test("versions render newest-first with author and note badges", async () => {
   const items = await screen.findAllByRole("button", { name: /owner|assistant/i });
   expect(items).toHaveLength(3);
   expect(within(items[0]!).getByText("third edit")).toBeInTheDocument();
-  expect(within(items[0]!).getByText("2026-07-03")).toBeInTheDocument();
+  expect(within(items[0]!).getByText(/^(2w|\d+d) ago$/)).toBeInTheDocument();
   expect(within(items[2]!).getByText("first edit")).toBeInTheDocument();
 });
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { DiffViewer } from "@/components/assistant-ui/diff-viewer";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { relativeTime } from "@/lib/time";
 import { getVersion, restoreVersion, type WikiVersion } from "./api";
 import { useWikiVersions } from "./use-wiki";
 import { diffToHunks, hunksToPatch } from "./diff";
@@ -106,7 +107,7 @@ export function HistoryPanel({
                 <span className="rounded bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
                   {AUTHOR_LABEL[v.author]}
                 </span>
-                <span className="font-mono text-xs text-muted-foreground">{v.created_at}</span>
+                <span className="text-xs text-muted-foreground" title={v.created_at}>{relativeTime(v.created_at)}</span>
               </span>
               {v.note && <span className="text-xs text-muted-foreground">{v.note}</span>}
             </button>
