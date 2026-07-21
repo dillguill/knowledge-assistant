@@ -148,7 +148,7 @@ export function WikiPage({
   openSlug?: string | null;
   onOpened?: () => void;
 } = {}) {
-  const { tree: rawTree, refresh: refreshTree } = useWikiTree();
+  const { tree: rawTree, loading: treeLoading, error: treeError, refresh: refreshTree } = useWikiTree();
   const [route, setRoute] = useState<WikiRoute>({ kind: "folder", id: null });
   const { ownerToken } = useSettings();
   const isOwner = Boolean(ownerToken);
@@ -158,6 +158,8 @@ export function WikiPage({
 
   const tree = useMemo(() => buildWikiTree(rawTree.folders, rawTree.pages), [rawTree]);
   const resolve = useMemo(() => buildWikiLinkResolver(rawTree.pages), [rawTree]);
+
+  const isLoading = rawTree.folders.length === 0 && rawTree.pages.length === 0;
 
   const onNavigateFolder = (id: number | null) => setRoute({ kind: "folder", id });
   const onNavigatePage = (slug: string) => setRoute({ kind: "page", slug });
@@ -199,9 +201,15 @@ export function WikiPage({
 
   return (
     <div className="h-full overflow-y-auto px-6 py-6">
+      {treeLoading ? (
+        <p className="text-sm text-muted-foreground">Loading wiki...</p>
+      ) : treeError ? (
+        <p role="alert" className="text-sm text-destructive">{treeError}</p>
+      ) : (
+        <>
       <div className="mx-auto mb-4 flex max-w-3xl justify-end">
         <Button size="sm" variant="outline" onClick={() => setRoute({ kind: "proposals" })}>
-          Proposals{pendingCount > 0 ? ` (${pendingCount})` : ""}
+          Proposals{pendingCount !== null && pendingCount > 0 ? ` (${pendingCount})` : ""}
         </Button>
       </div>
       {isOwner && (
@@ -221,6 +229,8 @@ export function WikiPage({
         onNavigateFolder={onNavigateFolder}
         onNavigatePage={onNavigatePage}
       />
+      </>
+      )}
     </div>
   );
 }

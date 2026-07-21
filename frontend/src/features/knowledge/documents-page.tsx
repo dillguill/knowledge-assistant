@@ -91,7 +91,9 @@ export function DocumentsPage() {
         )}
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {collections.map((c) => (
+          {collections.length === 0 ? (
+            <p key="empty" className="col-span-full text-sm text-muted-foreground">No collections yet.</p>
+          ) : collections.map((c) => (
             <button
               key={c.id}
               onClick={() => setSelected(c)}
@@ -132,7 +134,9 @@ export function DocumentsPage() {
               onChange={(e) => void handleUpload(e.target.files)}
             />
             <ul className="mt-3 divide-y divide-border">
-              {files.map((f) => (
+              {files.length === 0 ? (
+                <li className="py-2 text-sm text-muted-foreground">No files yet.</li>
+              ) : files.map((f) => (
                 <li key={f.id} className="flex items-center gap-3 py-2 text-sm">
                   <span className="rounded bg-accent px-1.5 font-mono text-[10px] uppercase">
                     {f.filename.split(".").pop()}

@@ -21,7 +21,7 @@ export function ProposalsInbox({
   /** Called with the approved page's slug so the caller can offer a link. */
   onApproved?: (slug: string) => void;
 }) {
-  const { proposals, refresh } = useWikiProposals("pending");
+  const { proposals, loading, refresh } = useWikiProposals("pending");
   const { ownerToken } = useSettings();
   const isOwner = Boolean(ownerToken);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -79,7 +79,9 @@ export function ProposalsInbox({
         </p>
       )}
 
-      {proposals.length === 0 ? (
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading proposals...</p>
+      ) : proposals.length === 0 ? (
         <p className="text-sm text-muted-foreground">No pending proposals.</p>
       ) : (
         <ul className="divide-y divide-border rounded-lg border border-border bg-card">
@@ -136,7 +138,8 @@ export function ProposalsInbox({
 
 /** Pending-proposal count, for a small badge on the inbox's entry point.
  * Public (no owner check) — visitors get the same read-only count. */
-export function usePendingProposalCount(): number {
-  const { proposals } = useWikiProposals("pending");
+export function usePendingProposalCount(): number | null {
+  const { proposals, loading } = useWikiProposals("pending");
+  if (loading) return null;
   return proposals.length;
 }
