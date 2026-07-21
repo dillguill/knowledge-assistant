@@ -39,6 +39,7 @@ import { SourcePills } from "@/features/chat/source-pills";
 import { useCreatePageMode } from "@/features/chat/create-page-mode";
 import { useSourceMentions } from "@/features/chat/use-source-mentions";
 import { useSettings } from "@/features/settings/settings-provider";
+import { useActionBarExportPdf } from "./pdf-export-action";
 import { cn } from "@/lib/utils";
 import {
   ActionBarMorePrimitive,
@@ -628,6 +629,7 @@ const AssistantMessage: FC = () => {
 };
 
 const AssistantActionBar: FC = () => {
+  const pdfExport = useActionBarExportPdf();
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
@@ -670,6 +672,14 @@ const AssistantActionBar: FC = () => {
               Export as Markdown
             </ActionBarMorePrimitive.Item>
           </ActionBarPrimitive.ExportMarkdown>
+          <ActionBarMorePrimitive.Item
+            className="aui-action-bar-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
+            disabled={!pdfExport}
+            onClick={pdfExport ?? undefined}
+          >
+            <DownloadIcon className="size-4" />
+            Export as PDF
+          </ActionBarMorePrimitive.Item>
         </ActionBarMorePrimitive.Content>
       </ActionBarMorePrimitive.Root>
     </ActionBarPrimitive.Root>
