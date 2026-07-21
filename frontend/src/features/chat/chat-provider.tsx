@@ -7,7 +7,7 @@ import {
   useLocalRuntime,
   useRemoteThreadListRuntime,
 } from "@assistant-ui/react";
-import { createLocalStorageAdapter } from "@assistant-ui/core/react";
+import { createLocalStorageAdapter, createSimpleTitleAdapter } from "@assistant-ui/core/react";
 import { loadSettings } from "@/features/settings/settings-storage";
 import { createApiAdapter } from "./api-adapter";
 import { BackendAttachmentAdapter } from "./backend-attachment-adapter";
@@ -68,6 +68,7 @@ const attachments = API_URL
 const threadListAdapter = createLocalStorageAdapter({
   storage: browserThreadStorage,
   prefix: STORAGE_PREFIX,
+  titleGenerator: createSimpleTitleAdapter(),
 });
 
 function useChatThreadRuntime() {
