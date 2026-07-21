@@ -207,7 +207,8 @@ export function WikiPage({
         <p role="alert" className="text-sm text-destructive">{treeError}</p>
       ) : (
         <>
-      <div className="mx-auto mb-4 flex max-w-3xl justify-end">
+      <div className="mx-auto mb-4 flex max-w-3xl items-center justify-end gap-2">
+        <span className="text-xs text-muted-foreground">AI edit suggestions</span>
         <Button size="sm" variant="outline" onClick={() => setRoute({ kind: "proposals" })}>
           Proposals{pendingCount !== null && pendingCount > 0 ? ` (${pendingCount})` : ""}
         </Button>
