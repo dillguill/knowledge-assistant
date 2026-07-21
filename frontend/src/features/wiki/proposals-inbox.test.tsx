@@ -15,6 +15,7 @@ beforeEach(() => {
 const proposal: api.WikiProposal = {
   id: 1,
   page_id: 5,
+  proposal_number: 1,
   title: "Setup",
   folder_id: 2,
   base_version_id: null,

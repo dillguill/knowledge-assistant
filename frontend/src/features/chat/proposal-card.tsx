@@ -12,8 +12,8 @@ import { extractWikiUpdate, stripActionFences } from "./wiki-update";
 type CardStatus =
   | { kind: "idle" }
   | { kind: "busy" }
-  | { kind: "submitted"; proposalId: number }
-  | { kind: "approved"; proposalId: number }
+  | { kind: "submitted"; proposalNumber: number }
+  | { kind: "approved"; proposalNumber: number }
   | { kind: "error"; message: string }
   | { kind: "dismissed" };
 
@@ -64,7 +64,7 @@ export function ProposalCard({
         content,
         citations,
       });
-      setStatus({ kind: "submitted", proposalId: proposal.id });
+      setStatus({ kind: "submitted", proposalNumber: proposal.proposal_number });
     } catch (e) {
       const message = e instanceof Error ? e.message : "Could not submit the proposal.";
       setStatus({
@@ -89,7 +89,7 @@ export function ProposalCard({
       });
       await approveProposal(proposal.id);
       bumpTargetRefresh();
-      setStatus({ kind: "approved", proposalId: proposal.id });
+      setStatus({ kind: "approved", proposalNumber: proposal.proposal_number });
     } catch (e) {
       setStatus({
         kind: "error",
@@ -108,12 +108,12 @@ export function ProposalCard({
         </span>
         {status.kind === "submitted" && (
           <span className="text-xs text-muted-foreground">
-            proposal #{status.proposalId} submitted
+            proposal #{status.proposalNumber} submitted
           </span>
         )}
         {status.kind === "approved" && (
           <span className="text-xs text-muted-foreground">
-            proposal #{status.proposalId} approved
+            proposal #{status.proposalNumber} approved
           </span>
         )}
       </div>

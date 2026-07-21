@@ -41,6 +41,7 @@ test("Propose posts page_id/title/folder_id/content and citations from the messa
   const createSpy = vi.spyOn(wikiApi, "createProposal").mockResolvedValue({
     id: 42,
     page_id: 5,
+    proposal_number: 42,
     title: "Setup",
     folder_id: 2,
     base_version_id: null,
@@ -71,6 +72,7 @@ test("citations default to an empty array when the message had no sources event"
   const createSpy = vi.spyOn(wikiApi, "createProposal").mockResolvedValue({
     id: 1,
     page_id: 5,
+    proposal_number: 1,
     title: "Setup",
     folder_id: 2,
     base_version_id: null,
@@ -107,6 +109,7 @@ test("owner Approve now chains create then approve, and refreshes the target pan
   const createSpy = vi.spyOn(wikiApi, "createProposal").mockResolvedValue({
     id: 7,
     page_id: 5,
+    proposal_number: 7,
     title: "Setup",
     folder_id: 2,
     base_version_id: null,

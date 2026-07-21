@@ -131,7 +131,7 @@ async def test_approve_existing_page_proposal_replaces_content_and_carries_citat
         latest = versions[0]
         assert latest["author"] == "assistant"
         assert latest["citations"] == [{"source": "manual", "page": 3}]
-        assert f"approved proposal #{proposal['id']}" in latest["note"]
+        assert f"approved proposal #{proposal['proposal_number']} (page #{proposal['page_id']})" in latest["note"]
 
 
 async def test_approve_new_page_proposal_creates_page_with_assistant_author():

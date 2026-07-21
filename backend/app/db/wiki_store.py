@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS wiki_versions (
 CREATE TABLE IF NOT EXISTS wiki_proposals (
     id INTEGER PRIMARY KEY,
     page_id INTEGER REFERENCES wiki_pages(id) ON DELETE CASCADE,  -- NULL = new page
+    proposal_number INTEGER NOT NULL DEFAULT 0,
     title TEXT NOT NULL,
     folder_id INTEGER REFERENCES wiki_folders(id) ON DELETE SET NULL,
     base_version_id INTEGER REFERENCES wiki_versions(id),
@@ -59,6 +60,30 @@ def _db_path() -> Path:
     return Path(get_settings().data_dir) / "knowledge.db"
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Idempotent schema migrations for databases created before a column
+    was added to _SCHEMA.  Add new ALTER TABLE blocks here; _SCHEMA itself
+    is only applied by CREATE TABLE IF NOT EXISTS and won't re-add columns
+    that were added after the original creation."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(wiki_proposals)").fetchall()}
+    if "proposal_number" not in cols:
+        conn.execute(
+            "ALTER TABLE wiki_proposals ADD COLUMN proposal_number INTEGER NOT NULL DEFAULT 0"
+        )
+        # Backfill existing rows with a per-page sequence number ordered by id.
+        rows = conn.execute(
+            "SELECT id, COALESCE(page_id, -1) AS group_key FROM wiki_proposals ORDER BY id"
+        ).fetchall()
+        counts: dict[int, int] = {}
+        for r in rows:
+            gk = r["group_key"]
+            counts[gk] = counts.get(gk, 0) + 1
+            conn.execute(
+                "UPDATE wiki_proposals SET proposal_number = ? WHERE id = ?",
+                (counts[gk], r["id"]),
+            )
+
+
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(_db_path())
     conn.row_factory = sqlite3.Row
@@ -70,6 +95,7 @@ def init_wiki(data_dir: str) -> None:
     Path(data_dir).mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(Path(data_dir) / "knowledge.db") as conn:
         conn.executescript(_SCHEMA)
+        _migrate(conn)
 
 
 def _slugify(title: str) -> str:
@@ -411,6 +437,7 @@ def _proposal_dict(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],
         "page_id": row["page_id"],
+        "proposal_number": row["proposal_number"],
         "title": row["title"],
         "folder_id": row["folder_id"],
         "base_version_id": row["base_version_id"],
@@ -455,6 +482,17 @@ def create_proposal(
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (page_id, title, folder_id, base_version_id, content,
              rationale, citations_json),
+        )
+        # Assign a per-page proposal number (new-page proposals share the NULL
+        # bucket, using -1 as a surrogate for the grouping key).
+        group_key = page_id if page_id is not None else -1
+        conn.execute(
+            """UPDATE wiki_proposals SET proposal_number = (
+                   SELECT COALESCE(MAX(proposal_number), 0) + 1
+                   FROM wiki_proposals
+                   WHERE COALESCE(page_id, -1) = ?
+               ) WHERE id = ?""",
+            (group_key, cur.lastrowid),
         )
         row = conn.execute(
             "SELECT * FROM wiki_proposals WHERE id = ?", (cur.lastrowid,)
@@ -510,7 +548,7 @@ def approve_proposal(proposal_id: int) -> dict:
             # page_id always has a live page behind it.
             page = _update_page_content_tx(
                 conn, proposal["page_id"], proposal["content"], author="assistant",
-                note=f"approved proposal #{proposal_id}",
+                note=f"approved proposal #{proposal['proposal_number']} (page #{proposal['page_id']})",
                 citations=proposal["citations"],
             )
 

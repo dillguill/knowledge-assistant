@@ -48,6 +48,7 @@ export type WikiVersionDetail = WikiVersion & {
 export type WikiProposal = {
   id: number;
   page_id: number | null;
+  proposal_number: number;
   title: string;
   folder_id: number | null;
   base_version_id: number | null;
