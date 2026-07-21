@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import { FileText, FolderOpen, PencilLine, X } from "lucide-react";
+import { FileText, FolderOpen, PencilLine, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCollections } from "@/features/knowledge/use-knowledge";
 import { useWikiTree } from "@/features/wiki/use-wiki";
+import { useCreatePageMode } from "./create-page-mode";
 import { useSourceSelection } from "./source-selection";
 import { useTargetSelection } from "./target-selection";
 
@@ -25,6 +26,8 @@ export function SourcePills() {
   const { wikiPageIds, setWikiPageIds, collectionIds, setCollectionIds } =
     useSourceSelection();
   const { targetPageId, setTargetPageId } = useTargetSelection();
+  const { active: createPageActive, setActive: setCreatePageActive } =
+    useCreatePageMode();
 
   const pageTitle = useMemo(() => {
     const m = new Map<number, string>();
@@ -40,6 +43,15 @@ export function SourcePills() {
 
   const pills = useMemo<Pill[]>(() => {
     const out: Pill[] = [];
+    if (createPageActive) {
+      out.push({
+        key: "create-page",
+        label: "Create page",
+        icon: Sparkles,
+        variant: "target",
+        onRemove: () => setCreatePageActive(false),
+      });
+    }
     if (targetPageId !== null) {
       out.push({
         key: `target-${targetPageId}`,
@@ -69,6 +81,8 @@ export function SourcePills() {
     }
     return out;
   }, [
+    createPageActive,
+    setCreatePageActive,
     targetPageId,
     setTargetPageId,
     wikiPageIds,
@@ -82,6 +96,7 @@ export function SourcePills() {
   if (pills.length === 0) return null;
 
   const clearAll = () => {
+    if (createPageActive) setCreatePageActive(false);
     if (wikiPageIds.length) setWikiPageIds([]);
     if (collectionIds.length) setCollectionIds([]);
     if (targetPageId !== null) setTargetPageId(null);

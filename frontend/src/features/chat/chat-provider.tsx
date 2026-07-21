@@ -14,6 +14,7 @@ import { BackendAttachmentAdapter } from "./backend-attachment-adapter";
 import { demoAdapter } from "./demo-adapter";
 import { GlobalInstructions } from "./global-instructions";
 import { SourceSelectionProvider, sourceRef, wikiSourceRef } from "./source-selection";
+import { CreatePageModeProvider, createPageModeRef } from "./create-page-mode";
 import { bumpTargetRefresh, TargetSelectionProvider, targetRef } from "./target-selection";
 import { browserThreadStorage, STORAGE_PREFIX, loadActiveThreadId, saveActiveThreadId } from "./thread-storage";
 import { useBackendStatus, type BackendStatus } from "./use-backend-status";
@@ -53,6 +54,7 @@ const chatAdapter = API_URL
       // Each turn in target mode re-confirms the pinned page; refresh the
       // panel so edits made elsewhere (or a just-approved proposal) show up.
       () => bumpTargetRefresh(),
+      () => createPageModeRef.current,
     )
   : demoAdapter;
 
@@ -106,7 +108,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       <StatusContext.Provider value={status}>
         <ModelContext.Provider value={{ model, setModel }}>
           <SourceSelectionProvider>
-            <TargetSelectionProvider>{children}</TargetSelectionProvider>
+            <CreatePageModeProvider>
+              <TargetSelectionProvider>{children}</TargetSelectionProvider>
+            </CreatePageModeProvider>
           </SourceSelectionProvider>
         </ModelContext.Provider>
       </StatusContext.Provider>

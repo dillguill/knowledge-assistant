@@ -36,6 +36,7 @@ import { ComposerModelSelect } from "@/features/chat/composer-model-select";
 import { EditPagePicker } from "@/features/chat/edit-page-picker";
 import { WikiUpdateAwareText } from "@/features/chat/proposal-card";
 import { SourcePills } from "@/features/chat/source-pills";
+import { useCreatePageMode } from "@/features/chat/create-page-mode";
 import { useSourceMentions } from "@/features/chat/use-source-mentions";
 import { useSettings } from "@/features/settings/settings-provider";
 import { cn } from "@/lib/utils";
@@ -258,6 +259,7 @@ const Composer: FC = () => {
   const { value, setText } = unstable_useComposerInput();
   const [editPickerOpen, setEditPickerOpen] = useState(false);
   const { ownerToken } = useSettings();
+  const { setActive: setCreatePageActive } = useCreatePageMode();
   const isOwner = Boolean(ownerToken);
 
   // `@` runs in action mode: picking a source/target updates the selection
@@ -297,8 +299,7 @@ const Composer: FC = () => {
             id: "create-page",
             label: "Create page with AI",
             description: "Draft a page from a prompt (e.g. how to build a homelab)",
-            execute: () =>
-              requestAnimationFrame(() => setText("Create a wiki page: ")),
+            execute: () => setCreatePageActive(true),
           },
         );
       }

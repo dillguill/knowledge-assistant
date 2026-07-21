@@ -1,5 +1,6 @@
 import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
 import { loadSettings } from "../settings/settings-storage";
+import { createPageModeRef } from "./create-page-mode";
 import { requestEditTarget } from "./target-selection";
 
 type Source = {
@@ -103,12 +104,20 @@ export function createApiAdapter(
   getSourceConfig: () => SourceConfig = NO_SOURCES,
   getTargetPageId: () => number | null = () => null,
   onTarget?: (target: ChatTarget) => void,
+  getCreatePageMode?: () => boolean,
 ): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal, context }) {
       const apiMessages = toApiMessages(messages);
       if (context?.system) {
         apiMessages.unshift({ role: "system", content: context.system });
+      }
+      if (getCreatePageMode?.() && apiMessages.length > 0) {
+        const last = apiMessages[apiMessages.length - 1];
+        if (last.role === "user") {
+          last.content = `Create a wiki page: ${last.content}`;
+        }
+        createPageModeRef.current = false;
       }
       const source = getSourceConfig();
       const targetPageId = getTargetPageId();
