@@ -76,11 +76,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ).fetchall()
         counts: dict[int, int] = {}
         for r in rows:
-            gk = r["group_key"]
+            gk = r[1]
             counts[gk] = counts.get(gk, 0) + 1
             conn.execute(
                 "UPDATE wiki_proposals SET proposal_number = ? WHERE id = ?",
-                (counts[gk], r["id"]),
+                (counts[gk], r[0]),
             )
 
 
