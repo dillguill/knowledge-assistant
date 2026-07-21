@@ -9,8 +9,7 @@ function formatAsHtml(text: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-  const withCode = escaped.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    const langLabel = lang ? `<div style="font-size:0.75rem;color:#888;margin-bottom:4px;">${lang}</div>` : "";
+  const withCode = escaped.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => {
     return `</p><pre style="background:#f5f5f5;padding:12px;border-radius:6px;overflow-x:auto;font-size:0.85rem;line-height:1.4;"><code>${code.trim()}</code></pre><p>`;
   });
   const withInline = withCode.replace(/`([^`]+)`/g, "<code style=\"background:#f5f5f5;padding:2px 4px;border-radius:3px;font-size:0.85em;\">$1</code>");

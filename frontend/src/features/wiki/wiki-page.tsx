@@ -159,8 +159,6 @@ export function WikiPage({
   const tree = useMemo(() => buildWikiTree(rawTree.folders, rawTree.pages), [rawTree]);
   const resolve = useMemo(() => buildWikiLinkResolver(rawTree.pages), [rawTree]);
 
-  const isLoading = rawTree.folders.length === 0 && rawTree.pages.length === 0;
-
   const onNavigateFolder = (id: number | null) => setRoute({ kind: "folder", id });
   const onNavigatePage = (slug: string) => setRoute({ kind: "page", slug });
 
