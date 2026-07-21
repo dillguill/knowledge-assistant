@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
 import {
   AssistantRuntimeProvider,
   CompositeAttachmentAdapter,
@@ -15,7 +15,7 @@ import { demoAdapter } from "./demo-adapter";
 import { GlobalInstructions } from "./global-instructions";
 import { SourceSelectionProvider, sourceRef, wikiSourceRef } from "./source-selection";
 import { bumpTargetRefresh, TargetSelectionProvider, targetRef } from "./target-selection";
-import { browserThreadStorage, STORAGE_PREFIX } from "./thread-storage";
+import { browserThreadStorage, STORAGE_PREFIX, loadActiveThreadId, saveActiveThreadId } from "./thread-storage";
 import { useBackendStatus, type BackendStatus } from "./use-backend-status";
 
 /** Backend base URL; unset (local dev without a backend) falls back to demo mode. */
@@ -84,9 +84,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setModelState(id);
   };
 
+  const [activeThreadId, setActiveThreadId] = useState<string | undefined>(
+    loadActiveThreadId,
+  );
+
+  const handleThreadIdChange = useCallback((threadId: string | undefined) => {
+    saveActiveThreadId(threadId);
+    setActiveThreadId(threadId);
+  }, []);
+
   const runtime = useRemoteThreadListRuntime({
     runtimeHook: useChatThreadRuntime,
     adapter: threadListAdapter,
+    threadId: activeThreadId,
+    onThreadIdChange: handleThreadIdChange,
   });
 
   return (
