@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { DiffViewer } from "@/components/assistant-ui/diff-viewer";
 import { Button } from "@/components/ui/button";
-import { loadSettings } from "@/features/settings/settings-storage";
+import { useSettings } from "@/features/settings/settings-provider";
 import { approveProposal, rejectProposal, type WikiProposal } from "./api";
 import { diffToHunks, hunksToPatch } from "./diff";
 import { useWikiProposals } from "./use-wiki";
@@ -21,8 +21,9 @@ export function ProposalsInbox({
   /** Called with the approved page's slug so the caller can offer a link. */
   onApproved?: (slug: string) => void;
 }) {
-  const { proposals, refresh } = useWikiProposals("pending");
-  const isOwner = Boolean(loadSettings().ownerToken);
+  const { proposals, loading, refresh } = useWikiProposals("pending");
+  const { ownerToken } = useSettings();
+  const isOwner = Boolean(ownerToken);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +32,9 @@ export function ProposalsInbox({
     return (
       <div className="mx-auto max-w-3xl">
         <p className="text-sm text-muted-foreground">
-          {proposals.length} pending {proposals.length === 1 ? "proposal" : "proposals"}
+          {loading
+            ? "Loading proposals…"
+            : `${proposals.length} pending ${proposals.length === 1 ? "proposal" : "proposals"}`}
         </p>
       </div>
     );
@@ -78,7 +81,9 @@ export function ProposalsInbox({
         </p>
       )}
 
-      {proposals.length === 0 ? (
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading proposals…</p>
+      ) : proposals.length === 0 ? (
         <p className="text-sm text-muted-foreground">No pending proposals.</p>
       ) : (
         <ul className="divide-y divide-border rounded-lg border border-border bg-card">
@@ -90,7 +95,7 @@ export function ProposalsInbox({
               >
                 <span className="truncate font-medium">{p.title}</span>
                 <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                  {p.page_id === null ? NEW_PAGE_LABEL : "update"}
+                  #{p.proposal_number} · {p.page_id === null ? NEW_PAGE_LABEL : "update"}
                 </span>
               </button>
             </li>
@@ -135,7 +140,8 @@ export function ProposalsInbox({
 
 /** Pending-proposal count, for a small badge on the inbox's entry point.
  * Public (no owner check) — visitors get the same read-only count. */
-export function usePendingProposalCount(): number {
-  const { proposals } = useWikiProposals("pending");
+export function usePendingProposalCount(): number | null {
+  const { proposals, loading } = useWikiProposals("pending");
+  if (loading) return null;
   return proposals.length;
 }

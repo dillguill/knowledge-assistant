@@ -40,6 +40,7 @@ test("Propose posts page_id/title/folder_id/content and citations from the messa
   const createSpy = vi.spyOn(wikiApi, "createProposal").mockResolvedValue({
     id: 42,
     page_id: 5,
+    proposal_number: 3,
     title: "Setup",
     folder_id: 2,
     base_version_id: null,
@@ -63,13 +64,15 @@ test("Propose posts page_id/title/folder_id/content and citations from the messa
     content: "new line\n",
     citations,
   });
-  expect(await screen.findByText("proposal #42 submitted")).toBeInTheDocument();
+  // Shows the per-page proposal number (3), not the global DB id (42).
+  expect(await screen.findByText("proposal #3 submitted")).toBeInTheDocument();
 });
 
 test("citations default to an empty array when the message had no sources event", async () => {
   const createSpy = vi.spyOn(wikiApi, "createProposal").mockResolvedValue({
     id: 1,
     page_id: 5,
+    proposal_number: 1,
     title: "Setup",
     folder_id: 2,
     base_version_id: null,
@@ -106,6 +109,7 @@ test("owner Approve now chains create then approve, and refreshes the target pan
   const createSpy = vi.spyOn(wikiApi, "createProposal").mockResolvedValue({
     id: 7,
     page_id: 5,
+    proposal_number: 2,
     title: "Setup",
     folder_id: 2,
     base_version_id: null,
@@ -126,7 +130,8 @@ test("owner Approve now chains create then approve, and refreshes the target pan
 
   await user.click(screen.getByRole("button", { name: "Approve now" }));
 
-  expect(await screen.findByText("proposal #7 approved")).toBeInTheDocument();
+  // Displays the per-page number (2); approve still targets the DB id (7).
+  expect(await screen.findByText("proposal #2 approved")).toBeInTheDocument();
   expect(createSpy).toHaveBeenCalled();
   expect(approveSpy).toHaveBeenCalledWith(7);
   expect(bumpSpy).toHaveBeenCalled();

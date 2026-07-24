@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { loadSettings } from "@/features/settings/settings-storage";
+import { useSettings } from "@/features/settings/settings-provider";
 import { buildWikiLinkResolver, buildWikiTree, type WikiFolderNode, type WikiFolderTree } from "./tree";
 import { useWikiTree } from "./use-wiki";
 import { FolderView } from "./folder-view";
 import { WikiPageView } from "./page-view";
 import { ProposalsInbox, usePendingProposalCount } from "./proposals-inbox";
+import { WikiIconButton } from "./wiki-actions";
 import {
   DeleteConfirmDialog,
   MoveDialog,
   NewFolderDialog,
   NewPageDialog,
   RenameDialog,
+  type PageOrFolderTarget,
 } from "./wiki-dialogs";
 
 type WikiRoute =
@@ -20,6 +22,7 @@ type WikiRoute =
   | { kind: "proposals" };
 
 type FolderDialog = null | "new-page" | "new-folder" | "rename" | "move" | "delete";
+type RowDialog = "rename" | "move" | "delete";
 
 /**
  * Owner-only controls for the folder currently being browsed: create a page
@@ -45,25 +48,22 @@ function FolderToolbar({
   const isEmpty = node ? node.children.length === 0 && node.pages.length === 0 : false;
 
   return (
-    <div className="mx-auto mb-4 flex max-w-3xl flex-wrap gap-2">
-      <Button size="sm" variant="outline" onClick={() => setDialog("new-page")}>
-        New page
-      </Button>
-      <Button size="sm" variant="outline" onClick={() => setDialog("new-folder")}>
-        New folder
-      </Button>
+    <div className="mx-auto mb-4 flex max-w-3xl flex-wrap items-center gap-2">
+      <WikiIconButton action="new-page" onClick={() => setDialog("new-page")} />
+      <WikiIconButton action="new-folder" onClick={() => setDialog("new-folder")} />
       {node && (
         <>
-          <Button size="sm" variant="outline" onClick={() => setDialog("rename")}>
-            Rename folder
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setDialog("move")}>
-            Move folder
-          </Button>
+          <span aria-hidden className="mx-1 h-5 w-px bg-border" />
+          <span className="text-xs text-muted-foreground">This folder:</span>
+          <WikiIconButton action="rename" label="Rename folder" onClick={() => setDialog("rename")} />
+          <WikiIconButton action="move" label="Move folder" onClick={() => setDialog("move")} />
           {isEmpty && (
-            <Button size="sm" variant="destructive" onClick={() => setDialog("delete")}>
-              Delete folder
-            </Button>
+            <WikiIconButton
+              action="delete"
+              label="Delete folder"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setDialog("delete")}
+            />
           )}
         </>
       )}
@@ -148,12 +148,27 @@ export function WikiPage({
   openSlug?: string | null;
   onOpened?: () => void;
 } = {}) {
-  const { tree: rawTree, refresh: refreshTree } = useWikiTree();
+  const { tree: rawTree, loading: treeLoading, error: treeError, refresh: refreshTree } = useWikiTree();
   const [route, setRoute] = useState<WikiRoute>({ kind: "folder", id: null });
-  const isOwner = Boolean(loadSettings().ownerToken);
+  const { ownerToken } = useSettings();
+  const isOwner = Boolean(ownerToken);
   // Visible to visitors too (read-only pending count) — fetched independently
   // of `ProposalsInbox` itself so the badge shows without opening the inbox.
+  // `null` while loading, so the badge doesn't flash a stale/zero count.
   const pendingCount = usePendingProposalCount();
+
+  // Per-row actions from the folder grid share one set of dialogs, lifted here
+  // so a click on any page/folder row can open them.
+  const [rowTarget, setRowTarget] = useState<PageOrFolderTarget | null>(null);
+  const [rowDialog, setRowDialog] = useState<RowDialog | null>(null);
+  const handleItemAction = (target: PageOrFolderTarget, action: RowDialog) => {
+    setRowTarget(target);
+    setRowDialog(action);
+  };
+  const closeRow = () => {
+    setRowDialog(null);
+    setRowTarget(null);
+  };
 
   const tree = useMemo(() => buildWikiTree(rawTree.folders, rawTree.pages), [rawTree]);
   const resolve = useMemo(() => buildWikiLinkResolver(rawTree.pages), [rawTree]);
@@ -198,28 +213,83 @@ export function WikiPage({
 
   return (
     <div className="h-full overflow-y-auto px-6 py-6">
-      <div className="mx-auto mb-4 flex max-w-3xl justify-end">
-        <Button size="sm" variant="outline" onClick={() => setRoute({ kind: "proposals" })}>
-          Proposals{pendingCount > 0 ? ` (${pendingCount})` : ""}
-        </Button>
-      </div>
-      {isOwner && (
-        <FolderToolbar
-          folderId={route.id}
-          node={node}
-          tree={tree}
-          onChanged={refreshTree}
-          onCreatedPage={(slug) => setRoute({ kind: "page", slug, edit: true })}
-          onDeletedFolder={(parentId) => onNavigateFolder(parentId)}
+      {treeLoading ? (
+        <p className="mx-auto max-w-3xl text-sm text-muted-foreground">Loading wiki…</p>
+      ) : treeError ? (
+        <p role="alert" className="mx-auto max-w-3xl text-sm text-destructive">
+          {treeError}
+        </p>
+      ) : (
+        <>
+          <div className="mx-auto mb-4 flex max-w-3xl items-center justify-end gap-2">
+            <span className="text-xs text-muted-foreground">AI edit suggestions</span>
+            <div className="relative">
+              <WikiIconButton
+                action="proposals"
+                onClick={() => setRoute({ kind: "proposals" })}
+              />
+              {pendingCount !== null && pendingCount > 0 && (
+                <span className="pointer-events-none absolute -end-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                  {pendingCount}
+                </span>
+              )}
+            </div>
+          </div>
+          {isOwner && (
+            <FolderToolbar
+              folderId={route.id}
+              node={node}
+              tree={tree}
+              onChanged={refreshTree}
+              onCreatedPage={(slug) => setRoute({ kind: "page", slug, edit: true })}
+              onDeletedFolder={(parentId) => onNavigateFolder(parentId)}
+            />
+          )}
+          <FolderView
+            tree={tree}
+            folderId={route.id}
+            isOwner={isOwner}
+            onNavigateFolder={onNavigateFolder}
+            onNavigatePage={onNavigatePage}
+            onItemAction={handleItemAction}
+          />
+        </>
+      )}
+
+      {rowTarget && rowDialog === "rename" && (
+        <RenameDialog
+          open
+          onOpenChange={(open) => !open && closeRow()}
+          target={rowTarget}
+          onRenamed={() => {
+            closeRow();
+            refreshTree();
+          }}
         />
       )}
-      <FolderView
-        tree={tree}
-        folderId={route.id}
-        isOwner={isOwner}
-        onNavigateFolder={onNavigateFolder}
-        onNavigatePage={onNavigatePage}
-      />
+      {rowTarget && rowDialog === "move" && (
+        <MoveDialog
+          open
+          onOpenChange={(open) => !open && closeRow()}
+          target={rowTarget}
+          tree={tree}
+          onMoved={() => {
+            closeRow();
+            refreshTree();
+          }}
+        />
+      )}
+      {rowTarget && rowDialog === "delete" && (
+        <DeleteConfirmDialog
+          open
+          onOpenChange={(open) => !open && closeRow()}
+          target={rowTarget}
+          onDeleted={() => {
+            closeRow();
+            refreshTree();
+          }}
+        />
+      )}
     </div>
   );
 }
