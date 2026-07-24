@@ -1,6 +1,23 @@
 import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
 import { loadSettings } from "../settings/settings-storage";
+import { consumeCreatePageMode } from "./create-page-mode";
 import { requestEditTarget } from "./target-selection";
+
+// Self-contained page-drafting instruction injected when the "New page" pill is
+// active. It carries the full `wiki-create-page` fence format itself rather than
+// relying on the backend's owner-only SYSTEM_PROMPT, so a visitor (no owner
+// token, so no SYSTEM_PROMPT) can still draft a page to propose. The draft is
+// rendered as a reviewable card, never written server-side by the chat turn —
+// hence the explicit "do not claim you saved it".
+const CREATE_PAGE_DIRECTIVE = [
+  "The user wants to create a NEW wiki page. Draft the page and output exactly",
+  "one fenced block in this format (the fenced lines must contain valid JSON):",
+  "```wiki-create-page",
+  '{"title": "<concise page title>", "content": "<full page in markdown>", "folder_id": null}',
+  "```",
+  "The draft is shown to the user as a card they review and save themselves — do",
+  "NOT claim the page has been created or saved. Base the page on this request:",
+].join("\n");
 
 type Source = {
   id: number;
@@ -109,6 +126,19 @@ export function createApiAdapter(
       const apiMessages = toApiMessages(messages);
       if (context?.system) {
         apiMessages.unshift({ role: "system", content: context.system });
+      }
+      // If the "New page" pill is armed, turn this turn's newest user message
+      // into a page-drafting instruction (consumes the mode so it's one-shot).
+      if (consumeCreatePageMode()) {
+        for (let i = apiMessages.length - 1; i >= 0; i--) {
+          if (apiMessages[i]!.role === "user") {
+            apiMessages[i] = {
+              ...apiMessages[i]!,
+              content: `${CREATE_PAGE_DIRECTIVE}\n\n${apiMessages[i]!.content}`,
+            };
+            break;
+          }
+        }
       }
       const source = getSourceConfig();
       const targetPageId = getTargetPageId();

@@ -17,18 +17,17 @@ def test_parse_no_fences():
     assert parse_actions("just a plain text response") == []
 
 
-def test_parse_wiki_create_page():
+def test_parse_ignores_wiki_create_page():
+    # `wiki-create-page` fences are drafted client-side into a reviewable card
+    # the user saves/proposes — creating a page is never an immediate server
+    # side effect of a chat turn, so it is not parsed as a JSON tool action.
     text = (
-        'I will create that page.\n\n'
+        'I will draft that page.\n\n'
         '```wiki-create-page\n'
         '{"title": "Reading List", "content": "## Books\\n- 1984", "folder_id": null}\n'
         '```'
     )
-    actions = parse_actions(text)
-    assert len(actions) == 1
-    assert actions[0]["action"] == "wiki-create-page"
-    assert actions[0]["data"]["title"] == "Reading List"
-    assert actions[0]["data"]["content"] == "## Books\n- 1984"
+    assert parse_actions(text) == []
 
 
 def test_parse_ignores_wiki_update():
@@ -56,21 +55,22 @@ def test_parse_collection_create():
 
 
 def test_parse_multiple_fences():
+    # A `wiki-create-page` draft alongside a real server action: only the
+    # collection-create is parsed; the page draft is left for the client card.
     text = (
         'First action:\n'
         '```collection-create\n{"name": "C1"}\n```\n'
-        'Second action:\n'
+        'Then a page draft:\n'
         '```wiki-create-page\n{"title": "P1", "content": "c"}\n```'
     )
     actions = parse_actions(text)
-    assert len(actions) == 2
+    assert len(actions) == 1
     assert actions[0]["action"] == "collection-create"
-    assert actions[1]["action"] == "wiki-create-page"
 
 
 def test_parse_malformed_json_yields_error():
     text = (
-        '```wiki-create-page\n'
+        '```collection-create\n'
         'not valid json\n'
         '```'
     )
@@ -82,12 +82,12 @@ def test_parse_malformed_json_yields_error():
 
 def test_parse_fence_already_in_error_entry():
     text = (
-        '```wiki-create-page\n'
+        '```collection-create\n'
         'not valid json\n'
         '```'
     )
     actions = parse_actions(text)
-    assert actions[0]["action"] == "wiki-create-page"
+    assert actions[0]["action"] == "collection-create"
 
 
 # --- _strip_fences ---

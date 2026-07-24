@@ -21,12 +21,14 @@ FENCE_COLLECTION_CREATE = re.compile(
 ALL_FENCES = [FENCE_WIKI_CREATE_PAGE, FENCE_WIKI_UPDATE, FENCE_COLLECTION_CREATE]
 
 SYSTEM_PROMPT = """\
-You have tools to create new wiki pages and collections. \
+You have tools to draft new wiki pages and create collections. \
 When the user asks you to create content, include a fenced code block \
 with the appropriate tool format in your response. Only use these tools when \
 the user explicitly asks.
 
-Tool: wiki-create-page — creates a new wiki page immediately (owner only)
+Tool: wiki-create-page — drafts a new wiki page. The draft is shown to the \
+user as a reviewable card they save (or propose) themselves; it is NOT written \
+until they act on it, so never claim the page has been created.
 ```wiki-create-page
 {"title": "Page Title", "content": "Full page markdown", "folder_id": null}
 ```
@@ -60,11 +62,12 @@ def _strip_fences(text: str) -> str:
 def parse_actions(text: str) -> list[dict]:
     tagged: list[tuple[int, dict]] = []
 
-    # `wiki-update` is deliberately NOT parsed here: it carries full-page
-    # markdown (target/edit flow) rendered by the frontend proposal card, not
-    # JSON — see target_builder.FENCE_INSTRUCTION.
+    # Neither `wiki-update` nor `wiki-create-page` is parsed here: both carry a
+    # page draft rendered by the frontend as a reviewable card the user saves
+    # (or proposes) — creating a page is never an immediate server side effect
+    # of a chat turn, so it can't diverge from what the user sees or fire twice.
+    # Only genuinely immediate actions (collection-create) run server-side.
     for pattern, action_name in [
-        (FENCE_WIKI_CREATE_PAGE, "wiki-create-page"),
         (FENCE_COLLECTION_CREATE, "collection-create"),
     ]:
         for match in pattern.finditer(text):
@@ -88,6 +91,10 @@ def execute_action(action: dict, owner_token: str = "") -> dict:
 
     data = action["data"]
 
+    # NOTE: `parse_actions` no longer emits "wiki-create-page" (page creation is
+    # drafted client-side and saved via the proposal flow), so this branch is
+    # unreachable from a chat turn. It's retained as a directly-callable,
+    # owner-guarded create primitive (and its unit tests) for programmatic use.
     if action_type == "wiki-create-page":
         err = _owner_error(owner_token)
         if err:

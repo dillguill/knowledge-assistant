@@ -1,7 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
-import { ProposalCard, DraftingProposalPlaceholder } from "./proposal-card";
+import {
+  CreatePageCard,
+  ProposalCard,
+  DraftingProposalPlaceholder,
+} from "./proposal-card";
 import * as wikiApi from "@/features/wiki/api";
 import * as targetSelection from "./target-selection";
 import { SETTINGS_KEY } from "@/features/settings/settings-storage";
@@ -145,5 +149,96 @@ test("Dismiss removes the card without calling any API", async () => {
   await user.click(screen.getByRole("button", { name: "Dismiss" }));
 
   expect(screen.queryByText(/proposed wiki update/i)).not.toBeInTheDocument();
+  expect(createSpy).not.toHaveBeenCalled();
+});
+
+// --- CreatePageCard (new-page draft) ---
+
+const createDraft = {
+  title: "Homelab Guide",
+  content: "# Homelab Guide\n\nStart here.",
+  folderId: null,
+};
+
+const newPageProposal: wikiApi.WikiProposal = {
+  id: 11,
+  page_id: null,
+  proposal_number: 1,
+  title: "Homelab Guide",
+  folder_id: null,
+  base_version_id: null,
+  content: "# Homelab Guide\n\nStart here.",
+  rationale: "",
+  citations: [],
+  status: "pending",
+  created_at: "t",
+  decided_at: null,
+};
+
+test("CreatePageCard previews the drafted page title and content", () => {
+  render(<CreatePageCard data={createDraft} />);
+  expect(screen.getByText("New page draft: Homelab Guide")).toBeInTheDocument();
+  // The drafted markdown is previewed (heading rendered).
+  expect(
+    screen.getByRole("heading", { name: "Homelab Guide" }),
+  ).toBeInTheDocument();
+});
+
+test("a visitor (no owner token) can only Propose the new page (page_id null)", async () => {
+  const createSpy = vi
+    .spyOn(wikiApi, "createProposal")
+    .mockResolvedValue({ ...newPageProposal, proposal_number: 2 });
+  const user = userEvent.setup();
+  render(<CreatePageCard data={createDraft} citations={[{ id: 1 }]} />);
+
+  expect(screen.queryByRole("button", { name: "Create page" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Propose page" }));
+
+  expect(createSpy).toHaveBeenCalledWith({
+    page_id: null,
+    title: "Homelab Guide",
+    folder_id: null,
+    content: "# Homelab Guide\n\nStart here.",
+    citations: [{ id: 1 }],
+  });
+  expect(await screen.findByText("proposal #2 submitted")).toBeInTheDocument();
+});
+
+test("an owner Create page chains create then approve and reports the page created", async () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ownerToken: "tok" }));
+  const createSpy = vi
+    .spyOn(wikiApi, "createProposal")
+    .mockResolvedValue(newPageProposal);
+  const approveSpy = vi.spyOn(wikiApi, "approveProposal").mockResolvedValue({
+    id: 99,
+    folder_id: null,
+    title: "Homelab Guide",
+    slug: "homelab-guide",
+    position: 0,
+    updated_at: "t",
+    last_author: "owner",
+    content: "# Homelab Guide\n\nStart here.",
+    last_version: null,
+  });
+  const user = userEvent.setup();
+  render(<CreatePageCard data={createDraft} />);
+
+  await user.click(screen.getByRole("button", { name: "Create page" }));
+
+  expect(createSpy).toHaveBeenCalledWith(
+    expect.objectContaining({ page_id: null, title: "Homelab Guide" }),
+  );
+  expect(approveSpy).toHaveBeenCalledWith(11);
+  expect(await screen.findByText("page created")).toBeInTheDocument();
+});
+
+test("CreatePageCard Dismiss removes the card without calling any API", async () => {
+  const createSpy = vi.spyOn(wikiApi, "createProposal");
+  const user = userEvent.setup();
+  render(<CreatePageCard data={createDraft} />);
+
+  await user.click(screen.getByRole("button", { name: "Dismiss" }));
+
+  expect(screen.queryByText(/new page draft/i)).not.toBeInTheDocument();
   expect(createSpy).not.toHaveBeenCalled();
 });

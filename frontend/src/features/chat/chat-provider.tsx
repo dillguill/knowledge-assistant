@@ -13,6 +13,7 @@ import { createApiAdapter } from "./api-adapter";
 import { BackendAttachmentAdapter } from "./backend-attachment-adapter";
 import { demoAdapter } from "./demo-adapter";
 import { GlobalInstructions } from "./global-instructions";
+import { CreatePageModeProvider } from "./create-page-mode";
 import { SourceSelectionProvider, sourceRef, wikiSourceRef } from "./source-selection";
 import { bumpTargetRefresh, TargetSelectionProvider, targetRef } from "./target-selection";
 import { browserThreadStorage, STORAGE_PREFIX } from "./thread-storage";
@@ -95,7 +96,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       <StatusContext.Provider value={status}>
         <ModelContext.Provider value={{ model, setModel }}>
           <SourceSelectionProvider>
-            <TargetSelectionProvider>{children}</TargetSelectionProvider>
+            <TargetSelectionProvider>
+              <CreatePageModeProvider>{children}</CreatePageModeProvider>
+            </TargetSelectionProvider>
           </SourceSelectionProvider>
         </ModelContext.Provider>
       </StatusContext.Provider>

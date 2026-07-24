@@ -56,15 +56,16 @@ export function extractWikiUpdate(text: string): WikiUpdateExtraction {
   return { before: text, block: null, after: "" };
 }
 
-const ACTION_FENCES = ["wiki-create-page", "collection-create"] as const;
+const ACTION_FENCES = ["collection-create"] as const;
 
 /**
- * Removes `wiki-create-page` / `collection-create` fenced blocks — the raw tool
- * JSON the assistant emits — from displayed text, including a still-streaming
- * (opened, not-yet-closed) fence so partial JSON never flashes. Unlike
- * `wiki-update`, these are executed immediately server-side and confirmed via
- * an SSE `action` event, so there's nothing to render for them. Mirrors
- * `backend/app/services/actions.py`'s `_strip_fences`.
+ * Removes `collection-create` fenced blocks — the raw tool JSON the assistant
+ * emits — from displayed text, including a still-streaming (opened,
+ * not-yet-closed) fence so partial JSON never flashes. A collection-create is
+ * executed immediately server-side and confirmed via an SSE `action` event, so
+ * there's nothing to render for it. (`wiki-create-page` is deliberately NOT
+ * stripped here — it's drafted into a reviewable card by `extractWikiCreatePage`
+ * below.) Mirrors the collection half of `backend/app/services/actions.py`.
  */
 export function stripActionFences(text: string): string {
   let out = text;
@@ -77,4 +78,70 @@ export function stripActionFences(text: string): string {
       .replace(new RegExp("^```" + name + "[ \\t]*\\n[\\s\\S]*$", "m"), "");
   }
   return out.trim();
+}
+
+/**
+ * A `wiki-create-page` fence carries the JSON draft of a *new* page
+ * (`{title, content, folder_id}`). Unlike `wiki-update` (which edits the pinned
+ * Target), a create has no existing page to diff against, so it's rendered as a
+ * "new page" draft card the user saves or proposes. Extraction mirrors
+ * `extractWikiUpdate`: streaming-safe (opened-but-unclosed → `pending`, so
+ * partial JSON never flashes), and the surrounding prose is preserved.
+ */
+export type WikiCreatePageData = {
+  title: string;
+  content: string;
+  folderId: number | null;
+};
+
+export type WikiCreateBlock =
+  | { status: "pending" }
+  // `data` is `null` when the closed fence held unparseable JSON — the caller
+  // then falls back to plain prose rather than rendering a broken card.
+  | { status: "complete"; data: WikiCreatePageData | null };
+
+export type WikiCreateExtraction = {
+  before: string;
+  block: WikiCreateBlock | null;
+  after: string;
+};
+
+// Non-greedy to the FIRST bare closing fence: the payload is a single JSON
+// object, which never itself contains a line that is exactly ``` (any backticks
+// inside the drafted markdown live within the JSON string, escaped), so unlike
+// `wiki-update` there's no nested-fence ambiguity to be greedy about.
+const FULL_CREATE_RE = /^```wiki-create-page[ \t]*\n([\s\S]*?)\n^```[ \t]*$/m;
+const OPEN_CREATE_RE = /^```wiki-create-page[ \t]*$/m;
+
+function parseCreateData(raw: string): WikiCreatePageData | null {
+  try {
+    const obj = JSON.parse(raw) as Record<string, unknown>;
+    const title = typeof obj.title === "string" ? obj.title : "";
+    const content = typeof obj.content === "string" ? obj.content : "";
+    if (!title && !content) return null;
+    const folderId = typeof obj.folder_id === "number" ? obj.folder_id : null;
+    return { title, content, folderId };
+  } catch {
+    return null;
+  }
+}
+
+export function extractWikiCreatePage(text: string): WikiCreateExtraction {
+  const full = FULL_CREATE_RE.exec(text);
+  if (full) {
+    const before = text.slice(0, full.index);
+    const after = text.slice(full.index + full[0].length).replace(/^\n/, "");
+    return {
+      before,
+      block: { status: "complete", data: parseCreateData(full[1] ?? "") },
+      after,
+    };
+  }
+
+  const open = OPEN_CREATE_RE.exec(text);
+  if (open) {
+    return { before: text.slice(0, open.index), block: { status: "pending" }, after: "" };
+  }
+
+  return { before: text, block: null, after: "" };
 }
