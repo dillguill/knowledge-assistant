@@ -1,5 +1,6 @@
 import { API_URL } from "@/features/chat/chat-provider";
 import { loadSettings } from "@/features/settings/settings-storage";
+import { bumpWikiData } from "./wiki-refresh";
 
 export type WikiFolder = {
   id: number;
@@ -115,6 +116,14 @@ function jsonInit(method: string, body?: unknown): RequestInit {
   };
 }
 
+/** Broadcast a wiki-data change (so every mounted wiki hook refetches) and pass
+ * the mutation's result straight through. Wrapped around each successful write
+ * so no caller can forget to refresh sibling views. */
+function bumped<T>(value: T): T {
+  bumpWikiData();
+  return value;
+}
+
 // ---- Tree ----
 
 export async function getTree(): Promise<WikiTree> {
@@ -134,7 +143,7 @@ export async function createFolder(
       jsonInit("POST", { name, parent_id: parentId }),
     ),
   );
-  return res.json();
+  return bumped(await res.json());
 }
 
 export async function patchFolder(
@@ -144,7 +153,7 @@ export async function patchFolder(
   const res = await check(
     await fetch(`${base()}/api/wiki/folders/${folderId}`, jsonInit("PATCH", patch)),
   );
-  return res.json();
+  return bumped(await res.json());
 }
 
 export async function deleteFolder(folderId: number): Promise<void> {
@@ -154,6 +163,7 @@ export async function deleteFolder(folderId: number): Promise<void> {
       headers: ownerHeaders(),
     }),
   );
+  bumpWikiData();
 }
 
 // ---- Pages ----
@@ -169,7 +179,7 @@ export async function createPage(
       jsonInit("POST", { title, folder_id: folderId, content }),
     ),
   );
-  return res.json();
+  return bumped(await res.json());
 }
 
 export async function getPage(pageId: number): Promise<WikiPage> {
@@ -195,7 +205,7 @@ export async function updatePage(
       jsonInit("PUT", { content, note }),
     ),
   );
-  return res.json();
+  return bumped(await res.json());
 }
 
 export async function patchPage(
@@ -205,7 +215,7 @@ export async function patchPage(
   const res = await check(
     await fetch(`${base()}/api/wiki/pages/${pageId}`, jsonInit("PATCH", patch)),
   );
-  return res.json();
+  return bumped(await res.json());
 }
 
 export async function deletePage(pageId: number): Promise<void> {
@@ -215,6 +225,7 @@ export async function deletePage(pageId: number): Promise<void> {
       headers: ownerHeaders(),
     }),
   );
+  bumpWikiData();
 }
 
 // ---- Versions ----
@@ -241,7 +252,7 @@ export async function restoreVersion(
       headers: ownerHeaders(),
     }),
   );
-  return res.json();
+  return bumped(await res.json());
 }
 
 // ---- Search ----
@@ -267,7 +278,7 @@ export async function draftPage(body: DraftRequest): Promise<WikiProposal> {
   const res = await check(
     await fetch(`${base()}/api/wiki/draft`, jsonInit("POST", body)),
   );
-  return res.json();
+  return bumped(await res.json());
 }
 
 export type ProposalCreate = {
@@ -283,7 +294,7 @@ export async function createProposal(body: ProposalCreate): Promise<WikiProposal
   const res = await check(
     await fetch(`${base()}/api/wiki/proposals`, jsonInit("POST", body)),
   );
-  return res.json();
+  return bumped(await res.json());
 }
 
 export async function listProposals(status?: string): Promise<WikiProposal[]> {
@@ -299,7 +310,7 @@ export async function approveProposal(proposalId: number): Promise<WikiPage> {
       headers: ownerHeaders(),
     }),
   );
-  return res.json();
+  return bumped(await res.json());
 }
 
 export async function rejectProposal(proposalId: number): Promise<WikiProposal> {
@@ -309,5 +320,5 @@ export async function rejectProposal(proposalId: number): Promise<WikiProposal> 
       headers: ownerHeaders(),
     }),
   );
-  return res.json();
+  return bumped(await res.json());
 }

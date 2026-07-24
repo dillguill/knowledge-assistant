@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSettings } from "@/features/settings/settings-provider";
 import { buildWikiLinkResolver, buildWikiTree, type WikiFolderNode, type WikiFolderTree } from "./tree";
@@ -23,6 +23,29 @@ type WikiRoute =
 
 type FolderDialog = null | "new-page" | "new-folder" | "rename" | "move" | "delete";
 type RowDialog = "rename" | "move" | "delete";
+
+// Persist the current wiki location so a page reload returns to the same
+// folder/page/proposals view instead of the wiki root.
+const WIKI_ROUTE_KEY = "knowledge-assistant:wiki-route";
+
+function loadRoute(): WikiRoute {
+  try {
+    const raw = localStorage.getItem(WIKI_ROUTE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as WikiRoute;
+      if (
+        parsed?.kind === "folder" ||
+        parsed?.kind === "page" ||
+        parsed?.kind === "proposals"
+      ) {
+        return parsed;
+      }
+    }
+  } catch {
+    // fall through to the default root
+  }
+  return { kind: "folder", id: null };
+}
 
 /**
  * Owner-only controls for the folder currently being browsed: create a page
@@ -144,12 +167,15 @@ function FolderToolbar({
 export function WikiPage({
   openSlug,
   onOpened,
+  homeToken,
 }: {
   openSlug?: string | null;
   onOpened?: () => void;
+  /** Increments when the Wiki nav item is re-clicked — resets to the root. */
+  homeToken?: number;
 } = {}) {
   const { tree: rawTree, loading: treeLoading, error: treeError, refresh: refreshTree } = useWikiTree();
-  const [route, setRoute] = useState<WikiRoute>({ kind: "folder", id: null });
+  const [route, setRoute] = useState<WikiRoute>(loadRoute);
   const { ownerToken } = useSettings();
   const isOwner = Boolean(ownerToken);
   // Visible to visitors too (read-only pending count) — fetched independently
@@ -182,6 +208,23 @@ export function WikiPage({
     onOpened?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSlug]);
+
+  // Remember the current location across reloads.
+  useEffect(() => {
+    localStorage.setItem(WIKI_ROUTE_KEY, JSON.stringify(route));
+  }, [route]);
+
+  // Reset to the wiki root when the Wiki nav item is re-clicked. Skip the
+  // initial mount so a restored deep location (or a citation deep-link) isn't
+  // immediately overwritten.
+  const firstHome = useRef(true);
+  useEffect(() => {
+    if (firstHome.current) {
+      firstHome.current = false;
+      return;
+    }
+    setRoute({ kind: "folder", id: null });
+  }, [homeToken]);
 
   if (route.kind === "page") {
     return (

@@ -9,6 +9,7 @@ import {
   type WikiTree,
   type WikiVersion,
 } from "./api";
+import { onWikiDataChange } from "./wiki-refresh";
 
 const EMPTY_TREE: WikiTree = { folders: [], pages: [] };
 
@@ -31,6 +32,7 @@ export function useWikiTree() {
       });
   }, []);
   useEffect(refresh, [refresh]);
+  useEffect(() => onWikiDataChange(refresh), [refresh]);
   return { tree, loading, error, refresh };
 }
 
@@ -41,6 +43,7 @@ export function useWikiPage(slug: string | null) {
     getPageBySlug(slug).then(setPage).catch(() => setPage(null));
   }, [slug]);
   useEffect(refresh, [refresh]);
+  useEffect(() => onWikiDataChange(refresh), [refresh]);
   return { page, refresh };
 }
 
@@ -51,6 +54,7 @@ export function useWikiVersions(pageId: number | null) {
     listVersions(pageId).then(setVersions).catch(() => setVersions([]));
   }, [pageId]);
   useEffect(refresh, [refresh]);
+  useEffect(() => onWikiDataChange(refresh), [refresh]);
   return { versions, refresh };
 }
 
@@ -70,5 +74,6 @@ export function useWikiProposals(status?: string) {
       });
   }, [status]);
   useEffect(refresh, [refresh]);
+  useEffect(() => onWikiDataChange(refresh), [refresh]);
   return { proposals, loading, refresh };
 }

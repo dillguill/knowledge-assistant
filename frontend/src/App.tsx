@@ -21,9 +21,27 @@ const TITLES: Record<View, string> = {
   wiki: "Wiki",
 };
 
+const VIEW_KEY = "knowledge-assistant:active-view";
+const VIEWS: View[] = ["chat", "settings", "documents", "wiki"];
+
+function loadView(): View {
+  const stored = localStorage.getItem(VIEW_KEY);
+  return VIEWS.includes(stored as View) ? (stored as View) : "chat";
+}
+
 function App() {
-  const [view, setView] = useState<View>("chat");
+  // Persist the active section so a page reload returns to where you were,
+  // rather than always snapping back to a blank chat.
+  const [view, setViewState] = useState<View>(loadView);
   const [wikiOpenSlug, setWikiOpenSlug] = useState<string | null>(null);
+  // Bumped when the Wiki nav item is clicked, so `WikiPage` resets to its top
+  // level even when it's already the active view (a nested page/folder).
+  const [wikiHomeToken, setWikiHomeToken] = useState(0);
+
+  const setView = (next: View) => {
+    localStorage.setItem(VIEW_KEY, next);
+    setViewState(next);
+  };
 
   useEffect(
     () =>
@@ -53,8 +71,16 @@ function App() {
                 id === "settings" ||
                 id === "documents" ||
                 id === "wiki"
-              )
+              ) {
+                // Re-clicking Wiki jumps back to its top level (clears any open
+                // page/folder), matching the expectation that a nav item is
+                // "home" for its section.
+                if (id === "wiki") {
+                  setWikiOpenSlug(null);
+                  setWikiHomeToken((t) => t + 1);
+                }
                 setView(id);
+              }
             }}
           >
             {/* chat stays mounted so runtime and thread state survive view switches */}
@@ -67,6 +93,7 @@ function App() {
               <WikiPage
                 openSlug={wikiOpenSlug}
                 onOpened={() => setWikiOpenSlug(null)}
+                homeToken={wikiHomeToken}
               />
             )}
           </AppShell>
