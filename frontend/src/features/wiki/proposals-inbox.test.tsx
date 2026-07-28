@@ -4,6 +4,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { ProposalsInbox } from "./proposals-inbox";
 import * as api from "./api";
 import { SETTINGS_KEY } from "@/features/settings/settings-storage";
+import { SettingsProvider } from "@/features/settings/settings-provider";
 
 beforeEach(() => {
   localStorage.clear();
@@ -14,6 +15,7 @@ beforeEach(() => {
 const proposal: api.WikiProposal = {
   id: 1,
   page_id: 5,
+  proposal_number: 1,
   title: "Setup",
   folder_id: 2,
   base_version_id: null,
@@ -29,7 +31,11 @@ const proposal: api.WikiProposal = {
 test("shows the pending list, and a diff once a proposal is selected", async () => {
   vi.spyOn(api, "listProposals").mockResolvedValue([proposal]);
   const user = userEvent.setup();
-  render(<ProposalsInbox />);
+  render(
+    <SettingsProvider>
+      <ProposalsInbox />
+    </SettingsProvider>,
+  );
 
   expect(await screen.findByRole("button", { name: /setup/i })).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /setup/i }));
@@ -42,7 +48,11 @@ test("shows the pending list, and a diff once a proposal is selected", async () 
 
 test("empty state shows when there are no pending proposals", async () => {
   vi.spyOn(api, "listProposals").mockResolvedValue([]);
-  render(<ProposalsInbox />);
+  render(
+    <SettingsProvider>
+      <ProposalsInbox />
+    </SettingsProvider>,
+  );
   expect(await screen.findByText("No pending proposals.")).toBeInTheDocument();
 });
 
@@ -63,7 +73,11 @@ test("approve removes the proposal from the list and reports the approved page's
   });
   const onApproved = vi.fn();
   const user = userEvent.setup();
-  render(<ProposalsInbox onApproved={onApproved} />);
+  render(
+    <SettingsProvider>
+      <ProposalsInbox onApproved={onApproved} />
+    </SettingsProvider>,
+  );
 
   await user.click(await screen.findByRole("button", { name: /setup/i }));
   await user.click(screen.getByRole("button", { name: "Approve" }));
@@ -81,7 +95,11 @@ test("reject removes the proposal from the list", async () => {
     .spyOn(api, "rejectProposal")
     .mockResolvedValue({ ...proposal, status: "rejected" });
   const user = userEvent.setup();
-  render(<ProposalsInbox />);
+  render(
+    <SettingsProvider>
+      <ProposalsInbox />
+    </SettingsProvider>,
+  );
 
   await user.click(await screen.findByRole("button", { name: /setup/i }));
   await user.click(screen.getByRole("button", { name: "Reject" }));
@@ -93,7 +111,11 @@ test("reject removes the proposal from the list", async () => {
 test("a visitor (no owner token) sees only a read-only pending count, no list or actions", async () => {
   localStorage.clear();
   vi.spyOn(api, "listProposals").mockResolvedValue([proposal]);
-  render(<ProposalsInbox />);
+  render(
+    <SettingsProvider>
+      <ProposalsInbox />
+    </SettingsProvider>,
+  );
 
   expect(await screen.findByText("1 pending proposal")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /setup/i })).not.toBeInTheDocument();

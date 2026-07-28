@@ -33,6 +33,7 @@ import {
 } from "@/app/composer-actions";
 import { CitationChip } from "@/features/chat/citation-chip";
 import { ComposerModelSelect } from "@/features/chat/composer-model-select";
+import { useCreatePageMode } from "@/features/chat/create-page-mode";
 import { EditPagePicker } from "@/features/chat/edit-page-picker";
 import { WikiUpdateAwareText } from "@/features/chat/proposal-card";
 import { SourcePills } from "@/features/chat/source-pills";
@@ -255,6 +256,7 @@ const ThreadSuggestionItem: FC = () => {
 const Composer: FC = () => {
   const { categories, onSelect: sourceOnSelect } = useSourceMentions();
   const { value, setText } = unstable_useComposerInput();
+  const { setActive: setCreatePageMode } = useCreatePageMode();
   const [editPickerOpen, setEditPickerOpen] = useState(false);
 
   // `@` runs in action mode: picking a source/target updates the selection
@@ -283,11 +285,11 @@ const Composer: FC = () => {
         id: "create-page",
         label: "Create page with AI",
         description: "Draft a page from a prompt (e.g. how to build a homelab)",
-        // Inserts an instruction as text; the tool-enabled assistant drafts and
-        // creates the page. rAF so it lands after removeOnExecute strips the
-        // "/create-page" token.
-        execute: () =>
-          requestAnimationFrame(() => setText("Create a wiki page: ")),
+        // Arms create-page mode (shown as a "New page" pill). The next message
+        // is turned into a page-drafting instruction by the chat adapter, and
+        // the assistant's draft renders as a reviewable card — no raw
+        // instruction text is dumped into the composer.
+        execute: () => setCreatePageMode(true),
       },
       {
         id: "edit-page",
@@ -296,7 +298,7 @@ const Composer: FC = () => {
         execute: () => setEditPickerOpen(true),
       },
     ],
-    [setText],
+    [setText, setCreatePageMode],
   );
 
   const slash = unstable_useSlashCommandAdapter({
@@ -635,7 +637,7 @@ const AssistantActionBar: FC = () => {
         </TooltipIconButton>
       </ActionBarPrimitive.Copy>
       <ActionBarPrimitive.Reload asChild>
-        <TooltipIconButton tooltip="Refresh">
+        <TooltipIconButton tooltip="Regenerate">
           <RefreshCwIcon />
         </TooltipIconButton>
       </ActionBarPrimitive.Reload>

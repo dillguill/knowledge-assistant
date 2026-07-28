@@ -8,7 +8,7 @@ const BANNERS: Partial<Record<string, string>> = {
   waking:
     "The backend is waking from sleep (~30–60s). Messages will flow once it's online.",
   offline:
-    "The backend isn't responding. Refresh to retry, or come back in a minute.",
+    "The backend isn't responding. Regenerate to retry, or come back in a minute.",
 };
 
 export function ChatPage() {

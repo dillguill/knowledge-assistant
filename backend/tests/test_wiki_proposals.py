@@ -1,3 +1,5 @@
+import sqlite3
+
 import httpx
 import pytest
 
@@ -131,7 +133,7 @@ async def test_approve_existing_page_proposal_replaces_content_and_carries_citat
         latest = versions[0]
         assert latest["author"] == "assistant"
         assert latest["citations"] == [{"source": "manual", "page": 3}]
-        assert f"approved proposal #{proposal['id']}" in latest["note"]
+        assert f"approved proposal #{proposal['proposal_number']}" in latest["note"]
 
 
 async def test_approve_new_page_proposal_creates_page_with_assistant_author():
@@ -368,3 +370,88 @@ async def test_proposal_title_and_content_length_limits():
             json={"title": "ok", "content": "x" * 200_001},
         )
         assert r.status_code == 422
+
+
+async def test_proposal_number_increments_per_page_bucket():
+    async with client() as c:
+        page = (await c.post(
+            "/api/wiki/pages",
+            json={"title": "Page", "folder_id": None, "content": "v1"},
+            headers=OWNER,
+        )).json()
+
+        p1 = (await c.post(
+            "/api/wiki/proposals",
+            json={"page_id": page["id"], "title": "Page", "content": "a"},
+        )).json()
+        p2 = (await c.post(
+            "/api/wiki/proposals",
+            json={"page_id": page["id"], "title": "Page", "content": "b"},
+        )).json()
+        # New-page proposals (page_id is null) share their own bucket.
+        n1 = (await c.post(
+            "/api/wiki/proposals",
+            json={"title": "New A", "content": "c"},
+        )).json()
+        n2 = (await c.post(
+            "/api/wiki/proposals",
+            json={"title": "New B", "content": "d"},
+        )).json()
+
+        assert p1["proposal_number"] == 1
+        assert p2["proposal_number"] == 2
+        assert n1["proposal_number"] == 1
+        assert n2["proposal_number"] == 2
+
+
+def test_migrate_backfills_proposal_number_on_preexisting_db(tmp_path):
+    # The autouse `env` fixture already ran init_wiki on tmp_path with the
+    # current schema, so hand-roll an *old* (pre-column) DB in a fresh subdir.
+    old_dir = tmp_path / "legacy"
+    old_dir.mkdir()
+    db_path = old_dir / "knowledge.db"
+
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE wiki_proposals (
+            id INTEGER PRIMARY KEY,
+            page_id INTEGER,
+            title TEXT NOT NULL,
+            folder_id INTEGER,
+            base_version_id INTEGER,
+            content TEXT NOT NULL,
+            rationale TEXT NOT NULL DEFAULT '',
+            citations TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            decided_at TEXT
+        );
+        """
+    )
+    conn.executemany(
+        "INSERT INTO wiki_proposals (id, page_id, title, content) VALUES (?, ?, ?, ?)",
+        [
+            (1, 1, "a", "x"),
+            (2, 1, "b", "x"),
+            (3, 2, "c", "x"),
+            (4, None, "d", "x"),
+            (5, None, "e", "x"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    # init_wiki must add the column and backfill per-page sequence numbers.
+    wiki_store.init_wiki(str(old_dir))
+
+    conn = sqlite3.connect(db_path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(wiki_proposals)")}
+    assert "proposal_number" in cols
+    numbers = dict(
+        conn.execute("SELECT id, proposal_number FROM wiki_proposals").fetchall()
+    )
+    conn.close()
+
+    # page 1 → 1,2 ; page 2 → 1 ; new-page (NULL) bucket → 1,2
+    assert numbers == {1: 1, 2: 2, 3: 1, 4: 1, 5: 2}

@@ -31,7 +31,8 @@ test("versions render newest-first with author and note badges", async () => {
   const items = await screen.findAllByRole("button", { name: /owner|assistant/i });
   expect(items).toHaveLength(3);
   expect(within(items[0]!).getByText("third edit")).toBeInTheDocument();
-  expect(within(items[0]!).getByText("2026-07-03")).toBeInTheDocument();
+  // The visible timestamp is relative now; the raw ISO is kept in `title`.
+  expect(within(items[0]!).getByTitle("2026-07-03")).toBeInTheDocument();
   expect(within(items[2]!).getByText("first edit")).toBeInTheDocument();
 });
 

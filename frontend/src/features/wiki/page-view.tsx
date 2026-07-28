@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { loadSettings } from "@/features/settings/settings-storage";
+import { useSettings } from "@/features/settings/settings-provider";
+import { relativeTime } from "@/lib/time";
 import { updatePage } from "./api";
 import { useWikiPage } from "./use-wiki";
 import { WikiMarkdown, type WikiLinkResolver } from "./wiki-markdown";
 import { folderBreadcrumb, type WikiFolderTree } from "./tree";
 import { PageEditor } from "./page-editor";
+import { WikiIconButton } from "./wiki-actions";
 import { DeleteConfirmDialog, MoveDialog, RenameDialog } from "./wiki-dialogs";
 import { HistoryPanel } from "./history-panel";
 import { exportPageAsMarkdown, exportPageAsPdf } from "./export";
@@ -41,7 +43,8 @@ export function WikiPageView({
   onNavigatePage: (slug: string) => void;
 }) {
   const { page, refresh } = useWikiPage(slug);
-  const isOwner = Boolean(loadSettings().ownerToken);
+  const { ownerToken } = useSettings();
+  const isOwner = Boolean(ownerToken);
 
   const [mode, setMode] = useState<"view" | "edit">(startInEdit ? "edit" : "view");
   const [draft, setDraft] = useState("");
@@ -157,46 +160,37 @@ export function WikiPageView({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">{page.title}</h1>
-            <p className="font-mono text-xs text-muted-foreground">
-              updated {page.updated_at}
+            <p className="text-xs text-muted-foreground" title={page.updated_at}>
+              updated {relativeTime(page.updated_at)}
               {authorKey && <> · {AUTHOR_LABEL[authorKey]}</>}
             </p>
           </div>
           {mode === "view" && (
-            <div className="no-print flex shrink-0 flex-wrap gap-2">
+            <div className="no-print flex shrink-0 flex-wrap items-center gap-2">
               {isOwner && (
-                <Button size="sm" variant="outline" onClick={handleEdit}>
-                  Edit
-                </Button>
+                <WikiIconButton action="edit" onClick={handleEdit} />
               )}
-              <Button
-                size="sm"
+              <WikiIconButton
+                action="history"
                 variant={showHistory ? "secondary" : "outline"}
+                aria-pressed={showHistory}
                 onClick={() => setShowHistory((v) => !v)}
-              >
-                History
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
+              />
+              <WikiIconButton
+                action="export-md"
                 onClick={() => exportPageAsMarkdown(page.slug, page.content)}
-              >
-                Export .md
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => exportPageAsPdf()}>
-                Export PDF
-              </Button>
+              />
+              <WikiIconButton action="export-pdf" onClick={() => exportPageAsPdf()} />
               {isOwner && (
                 <>
-                  <Button size="sm" variant="outline" onClick={() => setDialog("rename")}>
-                    Rename
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setDialog("move")}>
-                    Move
-                  </Button>
-                  <Button size="sm" variant="destructive" onClick={() => setDialog("delete")}>
-                    Delete
-                  </Button>
+                  <span aria-hidden className="mx-1 h-5 w-px bg-border" />
+                  <WikiIconButton action="rename" onClick={() => setDialog("rename")} />
+                  <WikiIconButton action="move" onClick={() => setDialog("move")} />
+                  <WikiIconButton
+                    action="delete"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setDialog("delete")}
+                  />
                 </>
               )}
             </div>

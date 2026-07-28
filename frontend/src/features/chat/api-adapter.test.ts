@@ -1,4 +1,5 @@
 import { createApiAdapter } from "./api-adapter";
+import { createPageRef } from "./create-page-mode";
 
 function sseResponse(events: string[]): Response {
   const body = events.map((e) => `data: ${e}\n\n`).join("");
@@ -362,6 +363,41 @@ test("omits tools_enabled and owner_token when owner token is not set", async ()
   const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
   expect(body.tools_enabled).toBeUndefined();
   expect(body.owner_token).toBeUndefined();
+  vi.unstubAllGlobals();
+});
+
+test("armed create-page mode wraps the newest user message with a drafting directive and consumes the flag", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  createPageRef.current = true;
+  const adapter = createApiAdapter("https://api.test", () => null);
+  await drain(run(adapter));
+
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  const userMsg = body.messages[body.messages.length - 1];
+  expect(userMsg.role).toBe("user");
+  expect(userMsg.content).toContain("create a NEW wiki page");
+  expect(userMsg.content).toContain("```wiki-create-page");
+  // The original request is preserved at the end.
+  expect(userMsg.content.endsWith("hi")).toBe(true);
+  // One-shot: the flag is consumed so the next turn isn't a create.
+  expect(createPageRef.current).toBe(false);
+  vi.unstubAllGlobals();
+});
+
+test("without create-page mode the user message is sent unchanged", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([JSON.stringify({ type: "text-delta", text: "ok" }), "[DONE]"]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  createPageRef.current = false;
+  const adapter = createApiAdapter("https://api.test", () => null);
+  await drain(run(adapter));
+
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(body.messages[body.messages.length - 1].content).toBe("hi");
   vi.unstubAllGlobals();
 });
 

@@ -10,10 +10,35 @@ import {
   updatePage,
 } from "./api";
 import { SETTINGS_KEY } from "@/features/settings/settings-storage";
+import { onWikiDataChange } from "./wiki-refresh";
 
 beforeEach(() => {
   localStorage.clear();
   vi.unstubAllGlobals();
+});
+
+test("a successful write broadcasts a wiki-data change so sibling views refetch", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({ id: 1, name: "Guides", parent_id: null, position: 0, created_at: "now" }),
+      { status: 201 },
+    ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const changed = vi.fn();
+  const off = onWikiDataChange(changed);
+  await createFolder("Guides", null);
+  off();
+  expect(changed).toHaveBeenCalledTimes(1);
+});
+
+test("a failed write does not broadcast a change", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 409 })));
+  const changed = vi.fn();
+  const off = onWikiDataChange(changed);
+  await expect(createFolder("Dup", null)).rejects.toThrow();
+  off();
+  expect(changed).not.toHaveBeenCalled();
 });
 
 test("createFolder (a write) sends the owner token header from settings", async () => {

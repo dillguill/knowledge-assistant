@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import { FileText, FolderOpen, PencilLine, X } from "lucide-react";
+import { FilePlus, FileText, FolderOpen, PencilLine, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCollections } from "@/features/knowledge/use-knowledge";
 import { useWikiTree } from "@/features/wiki/use-wiki";
+import { useCreatePageMode } from "./create-page-mode";
 import { useSourceSelection } from "./source-selection";
 import { useTargetSelection } from "./target-selection";
 
@@ -10,7 +11,7 @@ type Pill = {
   key: string;
   label: string;
   icon: typeof FileText;
-  variant: "source" | "target";
+  variant: "source" | "target" | "create";
   onRemove: () => void;
 };
 
@@ -25,6 +26,7 @@ export function SourcePills() {
   const { wikiPageIds, setWikiPageIds, collectionIds, setCollectionIds } =
     useSourceSelection();
   const { targetPageId, setTargetPageId } = useTargetSelection();
+  const { active: creatingPage, setActive: setCreatingPage } = useCreatePageMode();
 
   const pageTitle = useMemo(() => {
     const m = new Map<number, string>();
@@ -40,6 +42,15 @@ export function SourcePills() {
 
   const pills = useMemo<Pill[]>(() => {
     const out: Pill[] = [];
+    if (creatingPage) {
+      out.push({
+        key: "create-page",
+        label: "New page",
+        icon: FilePlus,
+        variant: "create",
+        onRemove: () => setCreatingPage(false),
+      });
+    }
     if (targetPageId !== null) {
       out.push({
         key: `target-${targetPageId}`,
@@ -69,6 +80,8 @@ export function SourcePills() {
     }
     return out;
   }, [
+    creatingPage,
+    setCreatingPage,
     targetPageId,
     setTargetPageId,
     wikiPageIds,
@@ -85,6 +98,7 @@ export function SourcePills() {
     if (wikiPageIds.length) setWikiPageIds([]);
     if (collectionIds.length) setCollectionIds([]);
     if (targetPageId !== null) setTargetPageId(null);
+    if (creatingPage) setCreatingPage(false);
   };
 
   return (
@@ -96,7 +110,7 @@ export function SourcePills() {
             key={pill.key}
             className={cn(
               "inline-flex max-w-56 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
-              pill.variant === "target"
+              pill.variant === "target" || pill.variant === "create"
                 ? "border-primary/30 bg-primary/10 text-primary"
                 : "border-border bg-muted text-foreground",
             )}

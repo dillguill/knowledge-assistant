@@ -17,7 +17,7 @@ test("assistant replies expose copy / regenerate; user messages expose edit", as
   expect(
     await screen.findByRole("button", { name: "Copy" }),
   ).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Regenerate" })).toBeInTheDocument();
   // the user action bar autohides for non-last messages; hover reveals it
   await user.hover(screen.getByText("hello there"));
   expect(

@@ -341,7 +341,10 @@ async def test_tools_disabled_no_system_prompt():
 
 
 @respx.mock
-async def test_tools_enabled_emits_action_events(tmp_path, monkeypatch):
+async def test_wiki_create_page_fence_is_not_executed_server_side(tmp_path, monkeypatch):
+    # A `wiki-create-page` fence is a draft the frontend renders as a reviewable
+    # card; the page is only written when the user saves or proposes it. The chat
+    # turn itself must not create anything, even for the owner.
     from app.config import get_settings
     from app.db import store, wiki_store
 
@@ -358,7 +361,7 @@ async def test_tools_enabled_emits_action_events(tmp_path, monkeypatch):
         b'data: {"id":"1","choices":[{"delta":{}}]}\n\n'
         b"data: [DONE]\n\n"
     )
-    route = respx.post(UPSTREAM).respond(
+    respx.post(UPSTREAM).respond(
         status_code=200,
         headers={"content-type": "text/event-stream"},
         content=WIKI_CREATE_SSE,
@@ -374,14 +377,8 @@ async def test_tools_enabled_emits_action_events(tmp_path, monkeypatch):
         json.loads(e) for e in events[:-1]
         if json.loads(e).get("type") == "action"
     ]
-    assert len(action_events) == 1
-    assert action_events[0]["action"] == "wiki-create-page"
-    assert "result" in action_events[0]
-    assert action_events[0]["result"]["title"] == "Reading List"
-
-    pages = wiki_store.list_pages()
-    assert len(pages) == 1
-    assert pages[0]["title"] == "Reading List"
+    assert action_events == []
+    assert wiki_store.list_pages() == []
     get_settings.cache_clear()
 
 
@@ -438,21 +435,21 @@ async def test_tools_enabled_owner_gated_action_fails_without_token(tmp_path, mo
     get_settings.cache_clear()
     store.init_db(str(tmp_path))
 
-    WIKI_CREATE_SSE = (
+    COL_CREATE_SSE = (
         b'data: {"id":"1","choices":[{"delta":{"content":'
-        b'"```wiki-create-page\\n'
-        b'{\\"title\\": \\"X\\", \\"content\\": \\"y\\"}\\n```"}}]}\n\n'
+        b'"```collection-create\\n'
+        b'{\\"name\\": \\"X\\"}\\n```"}}]}\n\n'
         b'data: {"id":"1","choices":[{"delta":{}}]}\n\n'
         b"data: [DONE]\n\n"
     )
     respx.post(UPSTREAM).respond(
         status_code=200,
         headers={"content-type": "text/event-stream"},
-        content=WIKI_CREATE_SSE,
+        content=COL_CREATE_SSE,
     )
     async with client() as c:
         resp = await c.post("/api/chat", json={
-            "messages": [{"role": "user", "content": "create a page"}],
+            "messages": [{"role": "user", "content": "create a collection"}],
             "tools_enabled": True,
             "owner_token": "",
         })
@@ -462,9 +459,10 @@ async def test_tools_enabled_owner_gated_action_fails_without_token(tmp_path, mo
         if json.loads(e).get("type") == "action"
     ]
     assert len(action_events) == 1
-    assert action_events[0]["action"] == "wiki-create-page"
+    assert action_events[0]["action"] == "collection-create"
     assert "error" in action_events[0]
     assert "Owner token required" in action_events[0]["error"]
+    assert store.list_collections() == []
     get_settings.cache_clear()
 
 

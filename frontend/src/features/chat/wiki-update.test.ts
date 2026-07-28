@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { extractWikiUpdate, stripActionFences } from "./wiki-update";
+import {
+  extractWikiCreatePage,
+  extractWikiUpdate,
+  stripActionFences,
+} from "./wiki-update";
 
 test("plain text with no fence at all", () => {
   const result = extractWikiUpdate("Just a normal reply, no fence here.");
@@ -63,23 +67,6 @@ test("a wiki-update mention mid-line (not its own fence line) is not treated as 
   expect(result.before).toBe("I could use a ```wiki-update fence if you want.");
 });
 
-test("stripActionFences removes a complete wiki-create-page fence, keeps prose", () => {
-  const text = [
-    "I created that page for you.",
-    "```wiki-create-page",
-    '{"title": "Homelab", "content": "# Homelab"}',
-    "```",
-  ].join("\n");
-  expect(stripActionFences(text)).toBe("I created that page for you.");
-});
-
-test("stripActionFences removes a still-streaming (unclosed) create fence", () => {
-  const text = ["Working on it.", "```wiki-create-page", '{"title": "Home'].join(
-    "\n",
-  );
-  expect(stripActionFences(text)).toBe("Working on it.");
-});
-
 test("stripActionFences removes a collection-create fence", () => {
   const text = ["Done.", "```collection-create", '{"name": "Manuals"}', "```"].join(
     "\n",
@@ -90,4 +77,64 @@ test("stripActionFences removes a collection-create fence", () => {
 test("stripActionFences leaves ordinary text (and wiki-update) untouched", () => {
   const text = ["No action fences here.", "```wiki-update", "# x", "```"].join("\n");
   expect(stripActionFences(text)).toBe(text.trim());
+});
+
+test("stripActionFences no longer strips wiki-create-page (it's drafted into a card)", () => {
+  const text = [
+    "Here's a draft.",
+    "```wiki-create-page",
+    '{"title": "Homelab", "content": "# Homelab"}',
+    "```",
+  ].join("\n");
+  // The create fence survives so `extractWikiCreatePage` can render the card.
+  expect(stripActionFences(text)).toContain("```wiki-create-page");
+});
+
+test("extractWikiCreatePage parses a complete fence into title/content/folderId", () => {
+  const text = [
+    "Sure, here's a draft:",
+    "```wiki-create-page",
+    '{"title": "Homelab", "content": "# Homelab\\n\\nRun services at home.", "folder_id": 4}',
+    "```",
+    "Save it when ready.",
+  ].join("\n");
+  const result = extractWikiCreatePage(text);
+  expect(result.before).toBe("Sure, here's a draft:\n");
+  expect(result.block).toEqual({
+    status: "complete",
+    data: {
+      title: "Homelab",
+      content: "# Homelab\n\nRun services at home.",
+      folderId: 4,
+    },
+  });
+  expect(result.after).toBe("Save it when ready.");
+});
+
+test("extractWikiCreatePage defaults a missing folder_id to null", () => {
+  const text = '```wiki-create-page\n{"title": "T", "content": "c"}\n```';
+  const result = extractWikiCreatePage(text);
+  expect(result.block).toEqual({
+    status: "complete",
+    data: { title: "T", content: "c", folderId: null },
+  });
+});
+
+test("extractWikiCreatePage reports pending while the fence is still streaming", () => {
+  const text = 'Working on it.\n```wiki-create-page\n{"title": "Home';
+  const result = extractWikiCreatePage(text);
+  expect(result.before).toBe("Working on it.\n");
+  expect(result.block).toEqual({ status: "pending" });
+});
+
+test("extractWikiCreatePage yields data:null for a closed fence with invalid JSON", () => {
+  const text = "```wiki-create-page\nnot json at all\n```";
+  const result = extractWikiCreatePage(text);
+  expect(result.block).toEqual({ status: "complete", data: null });
+});
+
+test("extractWikiCreatePage returns no block for plain prose", () => {
+  const result = extractWikiCreatePage("Just a normal reply.");
+  expect(result.block).toBeNull();
+  expect(result.before).toBe("Just a normal reply.");
 });
