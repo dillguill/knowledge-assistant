@@ -9,66 +9,73 @@ Portfolio piece demonstrating AI/RAG engineering, full-stack product work, backe
 and evaluation — running on free-tier hosting.
 
 > **Live:** https://dillguill.github.io/knowledge-assistant/
-> **Status:** v0.1.0 (streaming chat foundation) in progress — see Issues/Milestones for tracking.
+> **Status:** v0.4.0 shipped (Living Docs) — see Issues/Milestones for what's next.
 
 ## Features
 
 - **Chat** — open-webui-class interface: streaming responses, thread history, message
   edit/regenerate, model selector (OpenRouter), in-chat attachments, system prompt editor.
-- **Knowledge sources, user-selected per conversation** *(planned)*:
+- **Knowledge sources, user-selected per conversation**:
   1. **Wiki** — the approved, aggregated living docs
   2. **Documents** — uploaded source collections queried directly
-  3. **Fresh input** — files attached in-chat, or free-tier web search
-- **Wiki (living docs)** *(planned)* — structured, cross-linked pages aggregated from
-  sources; every change flows through a per-section approval diff, with provenance back to
-  the originals.
-- **RAG** *(planned)* — hybrid retrieval (SQLite FTS5 keyword + sqlite-vec vector,
-  rank-fused, reranked) behind a swappable retriever interface, toggleable against plain
-  context mode.
-- **Skills** *(planned)* — structured research and comparison workflows invocable from chat.
-- **Analytics** *(planned)* — usage dashboard (tokens, requests, latency per model).
+  3. **Fresh input** — files attached in-chat (free-tier web search *planned*, v0.6.0)
+- **Wiki (living docs)** — a folder-tree wiki of full-markdown pages with version history,
+  diffs, and restore. Assistant-authored changes always flow through a proposal/approval
+  loop (visitor-submittable, owner-approved, capped at 25 pending); the owner's own edits
+  apply immediately as tracked versions. A wiki page can also be "targeted" in chat so the
+  model proposes edits to it directly, and an owner-only drafter can generate a full page
+  from selected documents in one call. Markdown and print-to-PDF export included.
+- **RAG** *(planned, v0.5.0)* — hybrid retrieval (SQLite FTS5 keyword + sqlite-vec vector,
+  rank-fused, reranked) behind a swappable retriever interface, toggleable against today's
+  full-context mode. Current retrieval is FTS5 keyword search (live for Wiki) plus
+  budget-truncated full-context stuffing — no chunking or embeddings exist yet.
+- **Skills** *(planned, v0.8.0)* — structured research and comparison workflows invocable
+  from chat.
+- **Analytics** *(planned, v0.7.0)* — usage dashboard (tokens, requests, latency per model).
 
 ## Architecture
 
 ```
-React SPA (GitHub Pages) ──HTTPS/SSE──► FastAPI (Hugging Face Space)
-                                          ├─ SQLite: FTS5 + sqlite-vec      (planned)
-                                          ├─ embeddings, in-process         (planned)
+React SPA (GitHub Pages) ──HTTPS/SSE──► FastAPI (Hugging Face Space,
+                                          wrapped in gradio.Server for free-tier hosting)
+                                          ├─ SQLite: FTS5 keyword search (live)
+                                          ├─ SQLite: sqlite-vec + embeddings   (planned, v0.5.0)
                                           ├─► OpenRouter (LLM proxy; key = Space secret)
-                                          ├─► web search API                (planned)
+                                          ├─► web search API                  (planned, v0.6.0)
                                           └─► private HF Dataset repo (durable storage)
 ```
 
 Static frontend on GitHub Pages; Python backend on a Hugging Face Space; SQLite synced to a
-private HF Dataset for durable storage. No secrets in the bundle. Visitors get chat and a
-read-only wiki; writes are owner-gated.
+private HF Dataset for durable storage (survives Space restarts). No secrets in the bundle.
+Visitors get chat, a read-only wiki, and can submit wiki proposals; all other writes
+(uploads, approvals, wiki CRUD) are owner-gated by a single admin token.
 
 ## Tech stack
 
 | Layer | Choice |
 |---|---|
-| Frontend | React · Vite · TypeScript · Tailwind · shadcn/ui · assistant-ui |
-| Backend | FastAPI · Uvicorn · Pydantic |
-| LLM | OpenRouter (free-tier models) |
-| Retrieval *(planned)* | SQLite FTS5 + sqlite-vec · sentence-transformers |
-| Ingestion *(planned)* | pypdf · trafilatura · stdlib |
-| Hosting | GitHub Pages + Hugging Face Space + private HF Dataset |
+| Frontend | React 19 · Vite · TypeScript · Tailwind v4 · shadcn/ui · assistant-ui |
+| Backend | FastAPI · Uvicorn · Pydantic v2 · raw `sqlite3` (no ORM) |
+| LLM | OpenRouter (free-tier models), via the `openai` SDK |
+| Retrieval | SQLite FTS5 keyword search (live) · sqlite-vec + sentence-transformers *(planned)* |
+| Ingestion | pypdf · trafilatura · stdlib |
+| Hosting | GitHub Pages + Hugging Face Space (Gradio SDK shim) + private HF Dataset |
 
 ## Roadmap
 
 Semver milestones, each independently demoable; tracked via GitHub Milestones and Issues.
 
-| Release | Theme |
-|---|---|
-| v0.1.0 | Foundation — repo, CI, deploy pipelines, streaming chat proxy, model selector |
-| v0.2.0 | Chat app baseline — threads, history, system prompt editor, settings, mobile |
-| v0.3.0 | Knowledge bases — uploads, ingestion, collections, cited answers |
-| v0.4.0 | Living docs — aggregation proposals, approval diffs, wiki UI |
-| v0.5.0 | RAG — hybrid retrieval behind a retriever interface |
-| v0.6.0 | Web search — free-tier search as a chat source |
-| v0.7.0 | Analytics + eval foundation |
-| v0.8.0 | Skills — structured workflows |
-| v1.0.0 | Showcase release |
+| Release | Theme | Status |
+|---|---|---|
+| v0.1.0 | Foundation — repo, CI, deploy pipelines, streaming chat proxy, model selector | ✅ Shipped |
+| v0.2.0 | Chat app baseline — threads, history, system prompt editor, settings, mobile | ✅ Shipped |
+| v0.3.0 | Knowledge bases — uploads, ingestion, collections, cited answers | ✅ Shipped |
+| v0.4.0 | Living docs — aggregation proposals, approval diffs, wiki UI | ✅ Shipped |
+| v0.5.0 | RAG — hybrid retrieval behind a retriever interface | Planned |
+| v0.6.0 | Web search — free-tier search as a chat source | Planned |
+| v0.7.0 | Analytics + eval foundation | Planned |
+| v0.8.0 | Skills — structured workflows | Planned |
+| v1.0.0 | Showcase release | Planned |
 
 ## Development
 
