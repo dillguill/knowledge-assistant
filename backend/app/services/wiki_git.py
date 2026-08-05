@@ -170,6 +170,52 @@ def commit_page(
     return sha, new_relative_path
 
 
+def write_page_file(
+    data_dir: str,
+    folder_path_parts: list[str],
+    slug: str,
+    title: str,
+    content: str,
+    created_at: str,
+    updated_at: str,
+) -> str:
+    """Write a page's frontmatter+content file without committing. Used by
+    the one-time migration script, which stages every page before a single
+    combined commit (see commit_all) rather than one commit per page."""
+    repo = ensure_repo(data_dir)
+    relative_path = "/".join(["wiki", *folder_path_parts, f"{slug}.md"])
+    full_path = repo / relative_path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    file_text = render_frontmatter(title, slug, created_at, updated_at) + content
+    full_path.write_text(file_text, encoding="utf-8")
+    return relative_path
+
+
+def commit_all(data_dir: str, message: str) -> str:
+    """Stage and commit every currently-written file in one commit — used by
+    the one-time migration script for its single combined migration commit."""
+    repo = ensure_repo(data_dir)
+    add_result = _git(["add", "-A"], repo)
+    if add_result.returncode != 0:
+        raise GitCommitError(add_result.stderr or add_result.stdout)
+    commit_result = _git(["commit", "-m", message], repo)
+    if commit_result.returncode != 0:
+        combined = commit_result.stdout + commit_result.stderr
+        if "nothing to commit" not in combined:
+            raise GitCommitError(combined)
+    sha = _current_head(repo)
+    if sha is None:
+        raise GitCommitError("commit succeeded but HEAD could not be resolved")
+    return sha
+
+
+def has_commits(data_dir: str) -> bool:
+    """Whether the wiki git repo already has at least one commit — used by
+    the migration script's idempotency guard."""
+    repo = ensure_repo(data_dir)
+    return _current_head(repo) is not None
+
+
 def delete_page_file(*, data_dir: str, relative_path: str, author: str, note: str = "") -> str:
     repo = ensure_repo(data_dir)
     full_path = repo / relative_path
