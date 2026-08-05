@@ -28,6 +28,7 @@ async def test_debounced_push_coalesces(monkeypatch):
     get_settings.cache_clear()
     uploads = MagicMock()
     monkeypatch.setattr(sync, "_upload_folder", uploads)
+    monkeypatch.setattr(sync, "_create_branch", MagicMock())
     sync.schedule_push(delay_s=0.05)
     sync.schedule_push(delay_s=0.05)  # coalesces with the first
     assert sync.status() == "pending"
@@ -48,31 +49,55 @@ def test_pull_survives_missing_repo(monkeypatch):
     sync.pull()  # must not raise
 
 
-def test_pull_excludes_git_pushed_wiki_subtree(monkeypatch):
-    # The wiki's own content (wiki/**) lives at the dataset repo's root,
-    # git-pushed independently by pull_wiki_git — the whole-tree pull must
-    # not also download it into data_dir's root as a stray duplicate.
+def test_pull_uses_the_dedicated_data_sync_branch(monkeypatch):
+    # The whole-tree blob sync and the wiki's real git history are two
+    # logically independent writers — sharing a branch caused a genuine
+    # non-fast-forward collision in live testing (both mechanisms racing to
+    # advance "main"). They now live on separate branches entirely, so the
+    # whole-tree pull no longer needs to exclude wiki/** — data-sync never
+    # has it in the first place, since nothing ever uploads it there.
     monkeypatch.setenv("HF_TOKEN", "t")
     monkeypatch.setenv("HF_DATASET_REPO", "u/r")
     get_settings.cache_clear()
     downloads = MagicMock()
     monkeypatch.setattr(sync, "_snapshot_download", downloads)
     sync.pull()
-    assert downloads.call_args.kwargs["ignore_patterns"] == ["wiki/**"]
+    assert downloads.call_args.kwargs["revision"] == sync._DATA_SYNC_REVISION
 
 
-async def test_debounced_push_excludes_local_wiki_git_clone(monkeypatch):
+async def test_debounced_push_ensures_branch_and_excludes_local_wiki_git_clone(monkeypatch):
     # wiki_git/ is a nested git working tree with its own .git internals —
     # the whole-tree blob-replace push must never touch it (see
-    # pull_wiki_git/schedule_wiki_push for its independent sync path).
+    # pull_wiki_git/schedule_wiki_push for its independent sync path), on
+    # top of now targeting its own dedicated branch.
     monkeypatch.setenv("HF_TOKEN", "t")
     monkeypatch.setenv("HF_DATASET_REPO", "u/r")
     get_settings.cache_clear()
     uploads = MagicMock()
+    branches = MagicMock()
     monkeypatch.setattr(sync, "_upload_folder", uploads)
+    monkeypatch.setattr(sync, "_create_branch", branches)
     sync.schedule_push(delay_s=0.05)
     await asyncio.sleep(0.1)
+    branches.assert_called_once_with(
+        repo_id="u/r", repo_type="dataset", branch=sync._DATA_SYNC_REVISION,
+        token="t", exist_ok=True,
+    )
     assert uploads.call_args.kwargs["ignore_patterns"] == ["wiki_git/**"]
+    assert uploads.call_args.kwargs["revision"] == sync._DATA_SYNC_REVISION
+
+
+async def test_debounced_push_survives_branch_creation_failure(monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "t")
+    monkeypatch.setenv("HF_DATASET_REPO", "u/r")
+    get_settings.cache_clear()
+
+    def boom(**kwargs):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(sync, "_create_branch", boom)
+    sync.schedule_push(delay_s=0.05)
+    await asyncio.sleep(0.1)  # must not raise
 
 
 # --- wiki git remote sync (separate from the whole-tree blob sync above) ---

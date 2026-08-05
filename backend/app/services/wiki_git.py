@@ -327,13 +327,38 @@ def ensure_remote(data_dir: str, url: str) -> None:
 
 def push(data_dir: str) -> None:
     """Push local commits to whatever "origin" is currently configured to.
-    No --force: the single-writer invariant (see sync.py) means this
-    process's local history should always be a fast-forward of the remote,
-    so a normal push failing is a genuine problem to surface, not paper over."""
+
+    No --force: a force-push would silently discard whatever the remote has
+    that we don't. Instead, a rejected (non-fast-forward) push gets exactly
+    one bounded retry — fetch, rebase local commits on top, push again —
+    covering the residual case of a brief overlap between writers (e.g. two
+    Space instances momentarily coexisting during a restart/redeploy)
+    despite the single-writer invariant. Not a substitute for keeping
+    logically independent write paths on separate branches (see sync.py) —
+    just defense-in-depth for the one case separate branches don't remove.
+    If the rebase itself conflicts, it's aborted cleanly and the failure is
+    raised rather than papered over.
+    """
     repo = _repo_dir(data_dir)
     result = _git(["push", "origin", "main"], repo)
-    if result.returncode != 0:
+    if result.returncode == 0:
+        return
+
+    fetch_result = _git(["fetch", "origin"], repo)
+    if fetch_result.returncode != 0:
         raise GitCommitError(result.stderr or result.stdout)
+
+    rebase_result = _git(["rebase", "origin/main"], repo)
+    if rebase_result.returncode != 0:
+        _git(["rebase", "--abort"], repo)
+        raise GitCommitError(
+            f"push rejected and could not be auto-resolved: "
+            f"{rebase_result.stderr or rebase_result.stdout}"
+        )
+
+    retry_result = _git(["push", "origin", "main"], repo)
+    if retry_result.returncode != 0:
+        raise GitCommitError(retry_result.stderr or retry_result.stdout)
 
 
 def pull_or_clone(data_dir: str) -> None:

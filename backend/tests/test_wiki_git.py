@@ -355,6 +355,81 @@ def test_push_raises_git_commit_error_on_failure(data_dir):
         wiki_git.push(data_dir)
 
 
+def _push_commit_from_a_second_clone(remote_dir, tmp_path, *, name, content):
+    """Simulate a second writer (e.g. a brief restart-overlap despite the
+    single-writer invariant) advancing the remote via an independent clone."""
+    other = tmp_path / f"other_{name}"
+    subprocess.run(["git", "clone", str(remote_dir), str(other)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(other), "config", "user.name", "Other"], check=True)
+    subprocess.run(["git", "-C", str(other), "config", "user.email", "other@test"], check=True)
+    target = other / "wiki" / f"{name}.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+    subprocess.run(["git", "-C", str(other), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(other), "commit", "-m", name], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(other), "push", "origin", "main"], check=True, capture_output=True
+    )
+
+
+def test_push_retries_once_via_rebase_on_non_fast_forward(tmp_path, data_dir):
+    remote_dir = _bare_remote(tmp_path)
+    wiki_git.ensure_remote(data_dir, str(remote_dir))
+    wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
+        content="v1", created_at="t1", updated_at="t1", author="owner", note="created",
+    )
+    wiki_git.push(data_dir)
+
+    _push_commit_from_a_second_clone(
+        remote_dir, tmp_path, name="other", content='---\ntitle: "Other"\n---\nhi'
+    )
+
+    # Our local clone hasn't fetched "other" yet — a non-conflicting local
+    # commit + push must auto-rebase and retry rather than fail outright.
+    wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="second-page", title="Second Page",
+        content="v1", created_at="t1", updated_at="t1", author="owner", note="created",
+    )
+    wiki_git.push(data_dir)  # must not raise
+
+    remote_log = subprocess.run(
+        ["git", "log", "--oneline", "main"], cwd=remote_dir, capture_output=True, text=True
+    ).stdout
+    assert "other" in remote_log
+    assert "created" in remote_log
+
+
+def test_push_aborts_rebase_and_raises_on_real_conflict(tmp_path, data_dir):
+    remote_dir = _bare_remote(tmp_path)
+    wiki_git.ensure_remote(data_dir, str(remote_dir))
+    wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
+        content="v1", created_at="t1", updated_at="t1", author="owner", note="created",
+    )
+    wiki_git.push(data_dir)
+
+    _push_commit_from_a_second_clone(
+        remote_dir, tmp_path,
+        name="oil-change", content='---\ntitle: "Oil Change"\n---\nCONFLICTING REMOTE EDIT',
+    )
+
+    # Our local clone edits the SAME file differently without having fetched
+    # the remote's conflicting edit — a genuine, unresolvable conflict.
+    wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
+        content="LOCAL CONFLICTING EDIT", created_at="t1", updated_at="t2",
+        author="owner", note="local edit",
+    )
+    with pytest.raises(wiki_git.GitCommitError):
+        wiki_git.push(data_dir)
+
+    repo = wiki_git._repo_dir(data_dir)
+    # the aborted rebase must not leave the repo mid-conflict
+    assert not (repo / ".git" / "rebase-apply").exists()
+    assert not (repo / ".git" / "rebase-merge").exists()
+
+
 def test_pull_or_clone_resets_local_to_remote_when_remote_has_history(tmp_path, data_dir):
     remote_dir = _bare_remote(tmp_path)
     _seed_remote_with_commit(remote_dir, tmp_path)

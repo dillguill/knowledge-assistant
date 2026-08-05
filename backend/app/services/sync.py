@@ -3,18 +3,24 @@
 Single-writer invariant: exactly one Space instance writes; pushes replace
 the dataset contents wholesale.
 
-The wiki's own content (wiki/**, at the dataset repo's root) is synced
-independently via real git push/fetch against the same dataset repo (see
-pull_wiki_git/schedule_wiki_push below) — this module's whole-tree
-snapshot_download/upload_folder calls exclude it in both directions so the
-two sync mechanisms never touch the same files (see wiki_git.py's remote
-sync functions for why mixing them would corrupt the git object store).
+The wiki's own content is synced independently via real git push/fetch
+against the same dataset repo (see pull_wiki_git/schedule_wiki_push below),
+on the repo's default "main" branch. This module's whole-tree blob-replace
+sync deliberately lives on a SEPARATE branch (_DATA_SYNC_REVISION) instead —
+confirmed via live testing that sharing "main" between the two causes a real
+non-fast-forward collision: upload_folder's commit API and a literal `git
+push` from the wiki's local clone both race to advance the same ref, with
+no coordination between them. Two logically independent writers get two
+refs; "same repo" was never meant to imply "same branch". wiki_git/** is
+still excluded from the local folder scan below (its own nested .git
+internals must never be uploaded as plain files), but that's an orthogonal
+concern from which branch this sync targets.
 """
 
 import asyncio
 import logging
 
-from huggingface_hub import snapshot_download, upload_folder
+from huggingface_hub import create_branch, snapshot_download, upload_folder
 
 from app.config import get_settings
 from app.services import wiki_git
@@ -23,9 +29,12 @@ log = logging.getLogger(__name__)
 _push_task: asyncio.Task | None = None
 _wiki_push_task: asyncio.Task | None = None
 
+_DATA_SYNC_REVISION = "data-sync"
+
 # indirection points so tests can monkeypatch without touching huggingface_hub
 _snapshot_download = snapshot_download
 _upload_folder = upload_folder
+_create_branch = create_branch
 _wiki_git_push = wiki_git.push
 _wiki_git_pull_or_clone = wiki_git.pull_or_clone
 
@@ -53,9 +62,9 @@ def pull() -> None:
             repo_type="dataset",
             local_dir=s.data_dir,
             token=s.hf_token,
-            ignore_patterns=["wiki/**"],
+            revision=_DATA_SYNC_REVISION,
         )
-    except Exception as exc:  # first boot (empty repo) or transient network
+    except Exception as exc:  # first boot (empty repo/branch) or transient network
         log.warning("dataset pull skipped: %s", exc)
 
 
@@ -76,11 +85,20 @@ async def _push_after(delay_s: float) -> None:
     await asyncio.sleep(delay_s)
     s = get_settings()
     try:
+        # upload_folder/snapshot_download never auto-create a branch (per
+        # HF Hub docs) — this ensure-step is idempotent (exist_ok=True) and
+        # cheap enough to run every push rather than tracking whether it's
+        # already been done once.
+        _create_branch(
+            repo_id=s.hf_dataset_repo, repo_type="dataset",
+            branch=_DATA_SYNC_REVISION, token=s.hf_token, exist_ok=True,
+        )
         _upload_folder(
             folder_path=s.data_dir,
             repo_id=s.hf_dataset_repo,
             repo_type="dataset",
             token=s.hf_token,
+            revision=_DATA_SYNC_REVISION,
             ignore_patterns=["wiki_git/**"],
         )
     except Exception as exc:
