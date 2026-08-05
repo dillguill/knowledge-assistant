@@ -10,11 +10,11 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-test("versions render newest-first with author and note badges", async () => {
-  vi.spyOn(api, "listVersions").mockResolvedValue([
-    { id: 3, author: "owner", note: "third edit", citations: [], created_at: "2026-07-03" },
-    { id: 2, author: "assistant", note: "", citations: [], created_at: "2026-07-02" },
-    { id: 1, author: "owner", note: "first edit", citations: [], created_at: "2026-07-01" },
+test("history renders newest-first with author and note badges", async () => {
+  vi.spyOn(api, "getPageHistory").mockResolvedValue([
+    { sha: "c3", author: "owner", note: "third edit", created_at: "2026-07-03" },
+    { sha: "c2", author: "assistant", note: "", created_at: "2026-07-02" },
+    { sha: "c1", author: "owner", note: "first edit", created_at: "2026-07-01" },
   ]);
 
   render(
@@ -36,17 +36,12 @@ test("versions render newest-first with author and note badges", async () => {
   expect(within(items[2]!).getByText("first edit")).toBeInTheDocument();
 });
 
-test("selecting a version fetches it and shows a unified diff against current content", async () => {
-  vi.spyOn(api, "listVersions").mockResolvedValue([
-    { id: 2, author: "owner", note: "", citations: [], created_at: "2026-07-02" },
+test("selecting a commit fetches it and shows a unified diff against current content", async () => {
+  vi.spyOn(api, "getPageHistory").mockResolvedValue([
+    { sha: "c2", author: "owner", note: "", created_at: "2026-07-02" },
   ]);
-  vi.spyOn(api, "getVersion").mockResolvedValue({
-    id: 2,
-    author: "owner",
-    note: "",
-    citations: [],
-    created_at: "2026-07-02",
-    page_id: 1,
+  vi.spyOn(api, "getCommit").mockResolvedValue({
+    sha: "c2",
     content: "old line\n",
   });
   const user = userEvent.setup();
@@ -70,20 +65,15 @@ test("selecting a version fetches it and shows a unified diff against current co
   expect(document.querySelector('[data-type="add"]')).toBeInTheDocument();
 });
 
-test("Restore (owner) POSTs the restore then refetches the version list", async () => {
-  const listSpy = vi.spyOn(api, "listVersions").mockResolvedValue([
-    { id: 2, author: "owner", note: "", citations: [], created_at: "2026-07-02" },
+test("Restore (owner) POSTs the restore then refetches the history list", async () => {
+  const historySpy = vi.spyOn(api, "getPageHistory").mockResolvedValue([
+    { sha: "c2", author: "owner", note: "", created_at: "2026-07-02" },
   ]);
-  vi.spyOn(api, "getVersion").mockResolvedValue({
-    id: 2,
-    author: "owner",
-    note: "",
-    citations: [],
-    created_at: "2026-07-02",
-    page_id: 1,
+  vi.spyOn(api, "getCommit").mockResolvedValue({
+    sha: "c2",
     content: "old line\n",
   });
-  const restoreSpy = vi.spyOn(api, "restoreVersion").mockResolvedValue({
+  const restoreSpy = vi.spyOn(api, "restoreCommit").mockResolvedValue({
     id: 1,
     folder_id: null,
     title: "t",
@@ -111,22 +101,17 @@ test("Restore (owner) POSTs the restore then refetches the version list", async 
   await user.click(await screen.findByRole("button", { name: /owner/i }));
   await user.click(await screen.findByRole("button", { name: /restore this version/i }));
 
-  await waitFor(() => expect(restoreSpy).toHaveBeenCalledWith(1, 2));
-  await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(restoreSpy).toHaveBeenCalledWith(1, "c2"));
+  await waitFor(() => expect(historySpy).toHaveBeenCalledTimes(2));
   expect(onRestored).toHaveBeenCalled();
 });
 
 test("a visitor sees no Restore button", async () => {
-  vi.spyOn(api, "listVersions").mockResolvedValue([
-    { id: 2, author: "owner", note: "", citations: [], created_at: "2026-07-02" },
+  vi.spyOn(api, "getPageHistory").mockResolvedValue([
+    { sha: "c2", author: "owner", note: "", created_at: "2026-07-02" },
   ]);
-  vi.spyOn(api, "getVersion").mockResolvedValue({
-    id: 2,
-    author: "owner",
-    note: "",
-    citations: [],
-    created_at: "2026-07-02",
-    page_id: 1,
+  vi.spyOn(api, "getCommit").mockResolvedValue({
+    sha: "c2",
     content: "old\n",
   });
   const user = userEvent.setup();

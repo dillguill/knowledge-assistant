@@ -1,6 +1,6 @@
 /**
  * A single "wiki data changed" broadcast. Every `useWikiTree` / `useWikiPage` /
- * `useWikiProposals` / `useWikiVersions` is an independent fetch with its own
+ * `useWikiProposals` / `useWikiHistory` is an independent fetch with its own
  * state (there's no shared client cache), so a write triggered in one component
  * used to leave every other copy stale until a full page reload — the folder
  * grid kept an old title after a rename, a freshly-created page didn't appear,

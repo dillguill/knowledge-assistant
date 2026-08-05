@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   getPageBySlug,
+  getPageHistory,
   getTree,
   listProposals,
-  listVersions,
+  type WikiHistoryEntry,
   type WikiPage,
   type WikiProposal,
   type WikiTree,
-  type WikiVersion,
 } from "./api";
 import { onWikiDataChange } from "./wiki-refresh";
 
@@ -47,15 +47,15 @@ export function useWikiPage(slug: string | null) {
   return { page, refresh };
 }
 
-export function useWikiVersions(pageId: number | null) {
-  const [versions, setVersions] = useState<WikiVersion[]>([]);
+export function useWikiHistory(pageId: number | null) {
+  const [history, setHistory] = useState<WikiHistoryEntry[]>([]);
   const refresh = useCallback(() => {
-    if (pageId === null) return setVersions([]);
-    listVersions(pageId).then(setVersions).catch(() => setVersions([]));
+    if (pageId === null) return setHistory([]);
+    getPageHistory(pageId).then(setHistory).catch(() => setHistory([]));
   }, [pageId]);
   useEffect(refresh, [refresh]);
   useEffect(() => onWikiDataChange(refresh), [refresh]);
-  return { versions, refresh };
+  return { history, refresh };
 }
 
 export function useWikiProposals(status?: string) {

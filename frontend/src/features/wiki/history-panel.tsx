@@ -3,8 +3,8 @@ import { DiffViewer } from "@/components/assistant-ui/diff-viewer";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "@/lib/time";
-import { getVersion, restoreVersion, type WikiVersion } from "./api";
-import { useWikiVersions } from "./use-wiki";
+import { getCommit, restoreCommit, type WikiHistoryEntry } from "./api";
+import { useWikiHistory } from "./use-wiki";
 import { diffToHunks, hunksToPatch } from "./diff";
 import { WikiMarkdown, type WikiLinkResolver } from "./wiki-markdown";
 
@@ -34,8 +34,8 @@ export function HistoryPanel({
   onClose: () => void;
   onRestored: () => void;
 }) {
-  const { versions, refresh } = useWikiVersions(pageId);
-  const [selected, setSelected] = useState<WikiVersion | null>(null);
+  const { history, refresh } = useWikiHistory(pageId);
+  const [selected, setSelected] = useState<WikiHistoryEntry | null>(null);
   const [selectedContent, setSelectedContent] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"diff" | "view">("diff");
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export function HistoryPanel({
     }
     let cancelled = false;
     setSelectedContent(null);
-    getVersion(selected.id)
+    getCommit(pageId, selected.sha)
       .then((detail) => {
         if (!cancelled) setSelectedContent(detail.content);
       })
@@ -58,14 +58,14 @@ export function HistoryPanel({
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [pageId, selected]);
 
   async function handleRestore() {
     if (!selected) return;
     setBusy(true);
     setError(null);
     try {
-      await restoreVersion(pageId, selected.id);
+      await restoreCommit(pageId, selected.sha);
       refresh();
       onRestored();
     } catch (e) {
@@ -90,8 +90,8 @@ export function HistoryPanel({
       </div>
 
       <ul className="divide-y divide-border rounded-md border border-border">
-        {versions.map((v) => (
-          <li key={v.id}>
+        {history.map((v) => (
+          <li key={v.sha}>
             <button
               onClick={() => {
                 setSelected(v);
@@ -100,7 +100,7 @@ export function HistoryPanel({
               }}
               className={cn(
                 "flex w-full flex-col gap-1 px-3 py-2 text-left text-sm hover:bg-accent",
-                selected?.id === v.id && "bg-accent",
+                selected?.sha === v.sha && "bg-accent",
               )}
             >
               <span className="flex items-center gap-2">
@@ -115,7 +115,7 @@ export function HistoryPanel({
             </button>
           </li>
         ))}
-        {versions.length === 0 && (
+        {history.length === 0 && (
           <li className="px-3 py-2 text-sm text-muted-foreground">No versions yet.</li>
         )}
       </ul>
