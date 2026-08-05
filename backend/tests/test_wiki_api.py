@@ -308,3 +308,30 @@ async def test_duplicate_folder_name_still_409_after_parent_check():
             headers=OWNER,
         )
         assert r.status_code == 409
+
+
+async def test_resync_page_endpoint_requires_owner():
+    async with client() as c:
+        page = (await c.post(
+            "/api/wiki/pages", json={"title": "Torque Specs", "content": "v1"},
+            headers=OWNER,
+        )).json()
+        r = await c.post(f"/api/wiki/pages/{page['id']}/resync")
+        assert r.status_code == 401
+
+
+async def test_resync_page_endpoint_returns_commit_sha():
+    async with client() as c:
+        page = (await c.post(
+            "/api/wiki/pages", json={"title": "Torque Specs", "content": "v1"},
+            headers=OWNER,
+        )).json()
+        r = await c.post(f"/api/wiki/pages/{page['id']}/resync", headers=OWNER)
+        assert r.status_code == 200
+        assert r.json()["commit_sha"] is not None
+
+
+async def test_resync_page_endpoint_404_for_unknown_page():
+    async with client() as c:
+        r = await c.post("/api/wiki/pages/999/resync", headers=OWNER)
+        assert r.status_code == 404

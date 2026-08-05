@@ -186,6 +186,17 @@ async def delete_page(page_id: int) -> None:
     sync.schedule_push()
 
 
+@router.post("/pages/{page_id}/resync", dependencies=[Depends(require_owner)])
+async def resync_page(page_id: int) -> dict:
+    """Manual on-demand git re-sync for a page that's sat stale with no new
+    edits since a prior git failure (see wiki_store.resync_page)."""
+    try:
+        commit_sha = wiki_store.resync_page(page_id)
+    except ValueError:
+        raise HTTPException(404, "Unknown page.")
+    return {"commit_sha": commit_sha}
+
+
 @router.get("/pages/{page_id}/versions")
 async def get_page_versions(page_id: int) -> dict:
     if wiki_store.get_page(page_id) is None:
