@@ -777,20 +777,14 @@ def get_version(version_id: int) -> dict | None:
 # context/v0.4.5_wiki-git-enhancement.md) — only the read path moves here.
 
 
-def _page_git_path(page_id: int) -> str | None:
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT git_path FROM wiki_pages WHERE id = ?", (page_id,)
-        ).fetchone()
-    return row["git_path"] if row else None
-
-
 def page_history(page_id: int) -> list[dict]:
-    """Git-log-backed history for a page, newest first."""
-    git_path = _page_git_path(page_id)
-    if git_path is None:
+    """Git-log-backed history for a page, newest first. Keyed by the page's
+    immutable slug (see wiki_git.log_for_page for why — not by git_path,
+    which is only a cached last-known-location, not the correlation key)."""
+    page = get_page(page_id)
+    if page is None:
         return []
-    entries = wiki_git.log_for_page(get_settings().data_dir, git_path)
+    entries = wiki_git.log_for_page(get_settings().data_dir, page["slug"])
     return [
         {
             "sha": e["sha"],
@@ -805,10 +799,10 @@ def page_history(page_id: int) -> list[dict]:
 def commit_content(page_id: int, sha: str) -> str | None:
     """Historical content of a page at a specific commit, or None if the
     commit doesn't belong to this page's history."""
-    git_path = _page_git_path(page_id)
-    if git_path is None:
+    page = get_page(page_id)
+    if page is None:
         return None
-    entries = wiki_git.log_for_page(get_settings().data_dir, git_path)
+    entries = wiki_git.log_for_page(get_settings().data_dir, page["slug"])
     match = next((e for e in entries if e["sha"] == sha), None)
     if match is None:
         return None

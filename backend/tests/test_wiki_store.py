@@ -438,12 +438,24 @@ def test_page_history_returns_git_log_entries_newest_first():
         assert set(entry) == {"sha", "author", "note", "created_at"}
 
 
-def test_page_history_empty_when_git_path_missing():
+def test_page_history_finds_entries_by_slug_even_if_git_path_is_stale():
+    # page_history is keyed on the page's immutable slug (see
+    # wiki_git.log_for_page), not the cached git_path column — a stale/null
+    # git_path must not make real git history disappear.
     page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
     with wiki_store._connect() as conn:
         conn.execute(
             "UPDATE wiki_pages SET git_path = NULL WHERE id = ?", (page["id"],)
         )
+    assert len(wiki_store.page_history(page["id"])) == 1
+
+
+def test_page_history_empty_when_page_was_never_synced(monkeypatch):
+    def boom(**kwargs):
+        raise wiki_store.wiki_git.GitCommitError("disk full")
+
+    monkeypatch.setattr(wiki_store.wiki_git, "commit_page", boom)
+    page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
     assert wiki_store.page_history(page["id"]) == []
 
 

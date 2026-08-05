@@ -224,18 +224,26 @@ def _extract_trailer(body: str, key: str) -> str | None:
     return None
 
 
-def log_for_page(data_dir: str, relative_path: str) -> list[dict]:
-    """Commit history for a page's file, newest first, tracked through
-    folder-move renames via --follow. Each entry's "path" is the file's path
-    AS OF that commit — a page's current path may differ if it's been moved
-    since, and content_at_commit needs the historical path, not today's."""
+def log_for_page(data_dir: str, slug: str) -> list[dict]:
+    """Commit history for a page, identified by its immutable slug (embedded
+    in each commit's frontmatter), newest first. Each entry's "path" is the
+    file's path AS OF that commit — a page's current path may differ if it's
+    been moved since, and content_at_commit needs the historical path, not
+    today's.
+
+    Deliberately does NOT use git's --follow/rename-similarity detection.
+    Two distinct pages with short, near-identical frontmatter (differing
+    only in title/slug) can exceed git's default ~50% similarity threshold,
+    making --follow spuriously treat one page's creation as a "rename" of a
+    completely unrelated page — a real bug caught while building this
+    (restoring page B could return page A's content). Slug identity is the
+    correct correlation key instead: it's immutable and globally unique
+    (see SCHEMA.md), embedded in the file itself, and unaffected by however
+    similar or different two pages' content happens to look.
+    """
     repo = ensure_repo(data_dir)
     result = _git(
-        [
-            "log", "--follow", "--name-only",
-            "--format=%x1e%H%x1f%an%x1f%aI%x1f%s",
-            "--", relative_path,
-        ],
+        ["log", "--name-only", "--format=%x1e%H%x1f%an%x1f%aI%x1f%s"],
         repo,
     )
     if result.returncode != 0:
@@ -249,8 +257,19 @@ def log_for_page(data_dir: str, relative_path: str) -> list[dict]:
         sha, _, rest = header.partition("\x1f")
         author_name, _, rest = rest.partition("\x1f")
         iso_date, _, subject = rest.partition("\x1f")
-        names = [line for line in filename_block.splitlines() if line.strip()]
-        path = names[-1] if names else relative_path
+        changed_paths = [line for line in filename_block.splitlines() if line.strip()]
+
+        matched_path = None
+        for path in changed_paths:
+            show_result = _git(["show", f"{sha}:{path}"], repo)
+            if show_result.returncode != 0:
+                continue
+            fields, _ = parse_frontmatter(show_result.stdout)
+            if fields.get("slug") == slug:
+                matched_path = path
+                break
+        if matched_path is None:
+            continue
 
         body_result = _git(["show", "-s", "--format=%B", sha], repo)
         body = body_result.stdout if body_result.returncode == 0 else ""
@@ -261,7 +280,7 @@ def log_for_page(data_dir: str, relative_path: str) -> list[dict]:
             "author": author,
             "note": subject,
             "created_at": iso_date,
-            "path": path,
+            "path": matched_path,
         })
     return entries
 
