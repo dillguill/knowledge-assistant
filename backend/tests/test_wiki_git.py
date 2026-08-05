@@ -278,6 +278,100 @@ def test_content_at_commit_returns_none_for_unknown_sha(data_dir):
     assert wiki_git.content_at_commit(data_dir, path, "deadbeef" * 5) is None
 
 
+def _bare_remote(tmp_path, name="remote.git"):
+    remote_dir = tmp_path / name
+    subprocess.run(
+        ["git", "init", "--bare", "-b", "main", str(remote_dir)],
+        check=True, capture_output=True,
+    )
+    return remote_dir
+
+
+def _seed_remote_with_commit(remote_dir, tmp_path):
+    """Populate a bare remote via a throwaway clone, simulating content
+    already pushed by a prior deployment/instance."""
+    seed_repo = tmp_path / "seed_clone"
+    subprocess.run(
+        ["git", "clone", str(remote_dir), str(seed_repo)],
+        check=True, capture_output=True,
+    )
+    subprocess.run(["git", "-C", str(seed_repo), "config", "user.name", "Seed"], check=True)
+    subprocess.run(["git", "-C", str(seed_repo), "config", "user.email", "seed@test"], check=True)
+    (seed_repo / "wiki").mkdir()
+    (seed_repo / "wiki" / "existing.md").write_text('---\ntitle: "Existing"\n---\nhi')
+    subprocess.run(["git", "-C", str(seed_repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(seed_repo), "commit", "-m", "seed"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(seed_repo), "push", "origin", "main"],
+        check=True, capture_output=True,
+    )
+
+
+# --- remote_url / ensure_remote / push / pull_or_clone ---
+
+
+def test_remote_url_uses_dataset_repo_owner_as_username():
+    # HF's git-auth docs (huggingface.co/blog/password-git-deprecation)
+    # require the actual account username in the URL, not a placeholder —
+    # derived here from the "owner/name" dataset_repo we already have.
+    url = wiki_git.remote_url("hf_abc123", "dillguill/knowledge-assistant-data")
+    assert url == "https://dillguill:hf_abc123@huggingface.co/datasets/dillguill/knowledge-assistant-data"
+
+
+def test_ensure_remote_adds_then_updates_origin_url(data_dir):
+    wiki_git.ensure_remote(data_dir, "https://example.com/a")
+    repo = wiki_git._repo_dir(data_dir)
+    result = subprocess.run(
+        ["git", "remote", "get-url", "origin"], cwd=repo, capture_output=True, text=True
+    )
+    assert result.stdout.strip() == "https://example.com/a"
+
+    # A rotated HF_TOKEN changes the embedded credential — must update, not skip.
+    wiki_git.ensure_remote(data_dir, "https://example.com/b")
+    result = subprocess.run(
+        ["git", "remote", "get-url", "origin"], cwd=repo, capture_output=True, text=True
+    )
+    assert result.stdout.strip() == "https://example.com/b"
+
+
+def test_push_sends_local_commits_to_remote(tmp_path, data_dir):
+    remote_dir = _bare_remote(tmp_path)
+    wiki_git.ensure_remote(data_dir, str(remote_dir))
+    wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
+        content="body", created_at="t1", updated_at="t1", author="owner", note="created",
+    )
+    wiki_git.push(data_dir)
+    result = subprocess.run(
+        ["git", "log", "--oneline", "main"], cwd=remote_dir, capture_output=True, text=True
+    )
+    assert "created" in result.stdout
+
+
+def test_push_raises_git_commit_error_on_failure(data_dir):
+    # No remote configured at all — push must fail loudly, not silently no-op.
+    wiki_git.ensure_repo(data_dir)
+    with pytest.raises(wiki_git.GitCommitError):
+        wiki_git.push(data_dir)
+
+
+def test_pull_or_clone_resets_local_to_remote_when_remote_has_history(tmp_path, data_dir):
+    remote_dir = _bare_remote(tmp_path)
+    _seed_remote_with_commit(remote_dir, tmp_path)
+
+    wiki_git.ensure_remote(data_dir, str(remote_dir))
+    wiki_git.pull_or_clone(data_dir)
+
+    repo = wiki_git._repo_dir(data_dir)
+    assert (repo / "wiki" / "existing.md").exists()
+
+
+def test_pull_or_clone_is_a_noop_on_a_brand_new_empty_remote(data_dir, tmp_path):
+    remote_dir = _bare_remote(tmp_path)
+    wiki_git.ensure_remote(data_dir, str(remote_dir))
+    wiki_git.pull_or_clone(data_dir)  # must not raise on an empty remote
+
+
 def test_delete_page_file_removes_file_and_commits(data_dir):
     _, path = wiki_git.commit_page(
         data_dir=data_dir,
