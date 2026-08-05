@@ -88,6 +88,9 @@ test("Save calls PUT then shows the updated author badge", async () => {
         last_version: { author: "owner", created_at: "t2", note: "" },
       }),
     );
+  vi.spyOn(api, "getPageHistory")
+    .mockResolvedValueOnce([{ sha: "c1", author: "assistant", note: "", created_at: "t1" }])
+    .mockResolvedValueOnce([{ sha: "c2", author: "owner", note: "", created_at: "t2" }]);
   const updateSpy = vi.spyOn(api, "updatePage").mockResolvedValue(makePage({ content: "new content" }));
   const user = userEvent.setup();
   renderPage();

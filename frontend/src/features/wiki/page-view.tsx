@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { useSettings } from "@/features/settings/settings-provider";
 import { relativeTime } from "@/lib/time";
 import { updatePage } from "./api";
-import { useWikiPage } from "./use-wiki";
+import { useWikiHistory, useWikiPage } from "./use-wiki";
 import { WikiMarkdown, type WikiLinkResolver } from "./wiki-markdown";
 import { folderBreadcrumb, type WikiFolderTree } from "./tree";
 import { PageEditor } from "./page-editor";
@@ -43,6 +43,7 @@ export function WikiPageView({
   onNavigatePage: (slug: string) => void;
 }) {
   const { page, refresh } = useWikiPage(slug);
+  const { history, refresh: refreshHistory } = useWikiHistory(page?.id ?? null);
   const { ownerToken } = useSettings();
   const isOwner = Boolean(ownerToken);
 
@@ -113,6 +114,7 @@ export function WikiPageView({
       setNote("");
       setMode("view");
       refresh();
+      refreshHistory();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save page.");
     } finally {
@@ -129,7 +131,12 @@ export function WikiPageView({
   }
 
   const breadcrumb = page.folder_id !== null ? folderBreadcrumb(page.folder_id, tree.byId) : [];
-  const authorKey = page.last_version?.author ?? page.last_author ?? null;
+  // Prefer the git-backed history's most recent entry (the substrate this
+  // milestone is moving to) over the older wiki_versions-derived fields,
+  // which stay only as a fallback while wiki_versions still dual-writes.
+  const latest = history[0] ?? null;
+  const authorKey = latest?.author ?? page.last_version?.author ?? page.last_author ?? null;
+  const lastUpdatedAt = latest?.created_at ?? page.updated_at;
 
   return (
     <div className="wiki-print-area h-full overflow-y-auto px-6 py-6">
@@ -160,8 +167,8 @@ export function WikiPageView({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">{page.title}</h1>
-            <p className="text-xs text-muted-foreground" title={page.updated_at}>
-              updated {relativeTime(page.updated_at)}
+            <p className="text-xs text-muted-foreground" title={lastUpdatedAt}>
+              updated {relativeTime(lastUpdatedAt)}
               {authorKey && <> · {AUTHOR_LABEL[authorKey]}</>}
             </p>
           </div>
@@ -211,7 +218,10 @@ export function WikiPageView({
               resolve={resolve}
               isOwner={isOwner}
               onClose={() => setShowHistory(false)}
-              onRestored={refresh}
+              onRestored={() => {
+                refresh();
+                refreshHistory();
+              }}
             />
           </div>
         )}
