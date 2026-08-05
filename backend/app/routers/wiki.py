@@ -87,6 +87,7 @@ async def create_folder(body: FolderCreate) -> dict:
     except sqlite3.IntegrityError:
         raise HTTPException(409, "A folder with that name already exists.")
     sync.schedule_push()
+    sync.schedule_wiki_push()
     return folder
 
 
@@ -107,6 +108,7 @@ async def patch_folder(folder_id: int, body: FolderPatch) -> dict:
     except ValueError:
         raise HTTPException(404, "Unknown folder.")
     sync.schedule_push()
+    sync.schedule_wiki_push()
     return _find_folder(folder_id)
 
 
@@ -122,6 +124,7 @@ async def delete_folder(folder_id: int) -> None:
     except sqlite3.IntegrityError:
         raise HTTPException(409, "Folder cannot be deleted right now.")
     sync.schedule_push()
+    sync.schedule_wiki_push()
 
 
 @router.post("/pages", status_code=201, dependencies=[Depends(require_owner)])
@@ -132,6 +135,7 @@ async def create_page(body: PageCreate) -> dict:
     except sqlite3.IntegrityError:
         raise HTTPException(404, "Unknown folder.")
     sync.schedule_push()
+    sync.schedule_wiki_push()
     return _page_response(page["id"])
 
 
@@ -158,6 +162,7 @@ async def update_page(page_id: int, body: PageUpdate) -> dict:
     wiki_store.update_page_content(page_id, body.content, author="owner",
                                    note=body.note)
     sync.schedule_push()
+    sync.schedule_wiki_push()
     return _page_response(page_id)
 
 
@@ -174,6 +179,7 @@ async def patch_page(page_id: int, body: PagePatch) -> dict:
         except sqlite3.IntegrityError:
             raise HTTPException(404, "Unknown folder.")
     sync.schedule_push()
+    sync.schedule_wiki_push()
     return _page_response(page_id)
 
 
@@ -184,6 +190,7 @@ async def delete_page(page_id: int) -> None:
         raise HTTPException(404, "Unknown page.")
     wiki_store.delete_page(page_id)
     sync.schedule_push()
+    sync.schedule_wiki_push()
 
 
 @router.post("/pages/{page_id}/resync", dependencies=[Depends(require_owner)])
@@ -194,6 +201,8 @@ async def resync_page(page_id: int) -> dict:
         commit_sha = wiki_store.resync_page(page_id)
     except ValueError:
         raise HTTPException(404, "Unknown page.")
+    sync.schedule_push()
+    sync.schedule_wiki_push()
     return {"commit_sha": commit_sha}
 
 
@@ -224,6 +233,7 @@ async def restore_commit(page_id: int, sha: str) -> dict:
     except ValueError:
         raise HTTPException(404, "Unknown commit.")
     sync.schedule_push()
+    sync.schedule_wiki_push()
     return _page_response(page_id)
 
 
@@ -272,6 +282,7 @@ async def draft_page(body: DraftRequest) -> dict:
     except wiki_store.PendingCapExceeded:
         raise HTTPException(429, "Proposal queue is full.")
     sync.schedule_push()
+    sync.schedule_wiki_push()
     return proposal
 
 
@@ -289,6 +300,7 @@ async def create_proposal(body: ProposalCreate) -> dict:
     except wiki_store.PendingCapExceeded:
         raise HTTPException(429, "Proposal queue is full.")
     sync.schedule_push()
+    sync.schedule_wiki_push()
     return proposal
 
 
@@ -313,6 +325,7 @@ async def approve_proposal(proposal_id: int) -> dict:
     except ValueError:
         raise HTTPException(409, "Proposal is not pending.")
     sync.schedule_push()
+    sync.schedule_wiki_push()
     return _page_response(page["id"])
 
 
@@ -325,4 +338,5 @@ async def reject_proposal(proposal_id: int) -> dict:
     except ValueError:
         raise HTTPException(409, "Proposal is not pending.")
     sync.schedule_push()
+    sync.schedule_wiki_push()
     return proposal
