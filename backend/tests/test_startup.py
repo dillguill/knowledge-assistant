@@ -1,6 +1,8 @@
 """Regression test: _startup ordering when sync.pull clobbers the DB."""
 
+import shutil
 import sqlite3
+import subprocess
 from pathlib import Path
 
 from app.config import get_settings
@@ -109,5 +111,44 @@ def test_startup_reconciles_pages_with_stale_git_path(tmp_path, monkeypatch):
             "SELECT git_path FROM wiki_pages WHERE id = ?", (page["id"],)
         ).fetchone()
     assert row["git_path"] is not None
+
+    get_settings.cache_clear()
+
+
+def test_startup_pulls_real_wiki_git_history_before_reconcile(tmp_path, monkeypatch):
+    """A fresh container boots with a SQLite DB that already has a page
+    (as if just pulled via sync.pull()) but no local wiki_git/ clone yet,
+    against an HF dataset repo that already holds real git history for that
+    page (pushed by a prior instance). _startup() must pull that real
+    history in before reconcile_git() runs — a naive local-init-first
+    ordering would instead create a fresh, divergent local commit."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("HF_TOKEN", "t")
+    monkeypatch.setenv("HF_DATASET_REPO", "u/r")
+    get_settings.cache_clear()
+
+    store.init_db(str(tmp_path))
+    wiki_store.init_wiki(str(tmp_path))
+    page = wiki_store.create_page("Torque Specs", None, "original content", "owner")
+    real_sha = wiki_store.page_history(page["id"])[0]["sha"]
+
+    # Move that page's real git history into a bare "remote", then wipe the
+    # local clone entirely — simulating a fresh container whose SQLite
+    # already synced but whose wiki_git/ working tree doesn't exist yet.
+    local_repo = wiki_git._repo_dir(str(tmp_path))
+    remote_dir = tmp_path.parent / "startup_remote.git"
+    subprocess.run(
+        ["git", "clone", "--bare", str(local_repo), str(remote_dir)],
+        check=True, capture_output=True,
+    )
+    shutil.rmtree(local_repo)
+
+    monkeypatch.setattr(wiki_git, "remote_url", lambda token, repo: str(remote_dir))
+    monkeypatch.setattr(sync, "pull", lambda: None)  # whole-tree SQLite pull already "happened" above
+
+    _startup()
+
+    shas = [h["sha"] for h in wiki_store.page_history(page["id"])]
+    assert real_sha in shas
 
     get_settings.cache_clear()
