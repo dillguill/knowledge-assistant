@@ -216,6 +216,68 @@ def has_commits(data_dir: str) -> bool:
     return _current_head(repo) is not None
 
 
+def _extract_trailer(body: str, key: str) -> str | None:
+    prefix = f"{key}: "
+    for line in body.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix):].strip()
+    return None
+
+
+def log_for_page(data_dir: str, relative_path: str) -> list[dict]:
+    """Commit history for a page's file, newest first, tracked through
+    folder-move renames via --follow. Each entry's "path" is the file's path
+    AS OF that commit — a page's current path may differ if it's been moved
+    since, and content_at_commit needs the historical path, not today's."""
+    repo = ensure_repo(data_dir)
+    result = _git(
+        [
+            "log", "--follow", "--name-only",
+            "--format=%x1e%H%x1f%an%x1f%aI%x1f%s",
+            "--", relative_path,
+        ],
+        repo,
+    )
+    if result.returncode != 0:
+        return []
+
+    entries: list[dict] = []
+    for record in result.stdout.split("\x1e"):
+        if not record.strip():
+            continue
+        header, _, filename_block = record.partition("\n\n")
+        sha, _, rest = header.partition("\x1f")
+        author_name, _, rest = rest.partition("\x1f")
+        iso_date, _, subject = rest.partition("\x1f")
+        names = [line for line in filename_block.splitlines() if line.strip()]
+        path = names[-1] if names else relative_path
+
+        body_result = _git(["show", "-s", "--format=%B", sha], repo)
+        body = body_result.stdout if body_result.returncode == 0 else ""
+        author = _extract_trailer(body, "wiki-author") or author_name
+
+        entries.append({
+            "sha": sha,
+            "author": author,
+            "note": subject,
+            "created_at": iso_date,
+            "path": path,
+        })
+    return entries
+
+
+def content_at_commit(data_dir: str, path: str, sha: str) -> str | None:
+    """Body content (frontmatter stripped) of a page's file as of a specific
+    commit. `path` must be the file's path AS OF that commit — see
+    log_for_page's "path" field. Returns None if the sha/path is unknown."""
+    repo = ensure_repo(data_dir)
+    result = _git(["show", f"{sha}:{path}"], repo)
+    if result.returncode != 0:
+        return None
+    _, body = parse_frontmatter(result.stdout)
+    return body
+
+
 def delete_page_file(*, data_dir: str, relative_path: str, author: str, note: str = "") -> str:
     repo = ensure_repo(data_dir)
     full_path = repo / relative_path

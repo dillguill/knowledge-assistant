@@ -199,6 +199,64 @@ def test_commit_page_raises_git_commit_error_when_git_unavailable(data_dir, monk
 # --- delete_page_file ---
 
 
+def test_log_for_page_returns_newest_first_with_trailers(data_dir):
+    wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
+        content="v1", created_at="t1", updated_at="t1", author="owner", note="created",
+    )
+    sha2, path = wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
+        content="v2", created_at="t1", updated_at="t2", author="assistant", note="clarify",
+    )
+    entries = wiki_git.log_for_page(data_dir, path)
+    assert len(entries) == 2
+    assert entries[0]["sha"] == sha2
+    assert entries[0]["author"] == "assistant"
+    assert entries[0]["note"] == "clarify"
+    assert entries[1]["note"] == "created"
+
+
+def test_log_for_page_follows_renames_across_folder_moves(data_dir):
+    sha1, old_path = wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=["engines"], slug="torque-specs",
+        title="Torque Specs", content="body", created_at="t1", updated_at="t1",
+        author="owner", note="created",
+    )
+    sha2, new_path = wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=["motors"], slug="torque-specs",
+        title="Torque Specs", content="body", created_at="t1", updated_at="t2",
+        author="owner", note="moved to a different folder", old_relative_path=old_path,
+    )
+    entries = wiki_git.log_for_page(data_dir, new_path)
+    shas = [e["sha"] for e in entries]
+    assert shas == [sha2, sha1]
+    paths = {e["sha"]: e["path"] for e in entries}
+    assert paths[sha1] == old_path
+    assert paths[sha2] == new_path
+
+
+def test_content_at_commit_returns_body_without_frontmatter(data_dir):
+    sha1, path = wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
+        content="original body", created_at="t1", updated_at="t1", author="owner",
+        note="created",
+    )
+    wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
+        content="updated body", created_at="t1", updated_at="t2", author="owner",
+        note="edit",
+    )
+    assert wiki_git.content_at_commit(data_dir, path, sha1) == "original body"
+
+
+def test_content_at_commit_returns_none_for_unknown_sha(data_dir):
+    _, path = wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
+        content="body", created_at="t1", updated_at="t1", author="owner", note="created",
+    )
+    assert wiki_git.content_at_commit(data_dir, path, "deadbeef" * 5) is None
+
+
 def test_delete_page_file_removes_file_and_commits(data_dir):
     _, path = wiki_git.commit_page(
         data_dir=data_dir,
