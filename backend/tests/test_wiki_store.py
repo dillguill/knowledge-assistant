@@ -422,3 +422,58 @@ def test_reconcile_git_syncs_all_pages():
     wiki_store.create_page("Torque Specs", None, "a", "owner")
     wiki_store.create_page("Oil Change", None, "b", "owner")
     assert wiki_store.reconcile_git() == 2
+
+
+# --- git history (page_history / commit_content / restore_commit) ---
+
+
+def test_page_history_returns_git_log_entries_newest_first():
+    page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
+    wiki_store.update_page_content(page["id"], "v2", "owner", note="clarify")
+    history = wiki_store.page_history(page["id"])
+    assert len(history) == 2
+    assert history[0]["note"] == "clarify"
+    assert history[1]["note"] == "created"
+    for entry in history:
+        assert set(entry) == {"sha", "author", "note", "created_at"}
+
+
+def test_page_history_empty_when_git_path_missing():
+    page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
+    with wiki_store._connect() as conn:
+        conn.execute(
+            "UPDATE wiki_pages SET git_path = NULL WHERE id = ?", (page["id"],)
+        )
+    assert wiki_store.page_history(page["id"]) == []
+
+
+def test_commit_content_returns_historical_body():
+    page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
+    original_sha = wiki_store.page_history(page["id"])[0]["sha"]
+    wiki_store.update_page_content(page["id"], "v2", "owner")
+    assert wiki_store.commit_content(page["id"], original_sha) == "v1"
+
+
+def test_commit_content_returns_none_for_unknown_sha():
+    page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
+    assert wiki_store.commit_content(page["id"], "deadbeef" * 5) is None
+
+
+def test_restore_commit_writes_historical_content_as_new_forward_commit():
+    page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
+    original_sha = wiki_store.page_history(page["id"])[0]["sha"]
+    wiki_store.update_page_content(page["id"], "v2", "owner")
+
+    restored = wiki_store.restore_commit(page["id"], original_sha)
+    assert restored["content"] == "v1"
+    assert wiki_store.get_page(page["id"])["content"] == "v1"
+
+    new_history = wiki_store.page_history(page["id"])
+    assert len(new_history) == 3
+    assert new_history[0]["note"].startswith("restored ")
+
+
+def test_restore_commit_raises_for_unknown_sha():
+    page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
+    with pytest.raises(ValueError):
+        wiki_store.restore_commit(page["id"], "deadbeef" * 5)

@@ -769,6 +769,61 @@ def get_version(version_id: int) -> dict | None:
     }
 
 
+# --- git history ---
+#
+# The read-side counterpart to "--- git sync ---" above: page_history/
+# commit_content read from real git commits instead of wiki_versions, which
+# stays a dual-write safety net for now (see
+# context/v0.4.5_wiki-git-enhancement.md) — only the read path moves here.
+
+
+def _page_git_path(page_id: int) -> str | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT git_path FROM wiki_pages WHERE id = ?", (page_id,)
+        ).fetchone()
+    return row["git_path"] if row else None
+
+
+def page_history(page_id: int) -> list[dict]:
+    """Git-log-backed history for a page, newest first."""
+    git_path = _page_git_path(page_id)
+    if git_path is None:
+        return []
+    entries = wiki_git.log_for_page(get_settings().data_dir, git_path)
+    return [
+        {
+            "sha": e["sha"],
+            "author": e["author"],
+            "note": e["note"],
+            "created_at": e["created_at"],
+        }
+        for e in entries
+    ]
+
+
+def commit_content(page_id: int, sha: str) -> str | None:
+    """Historical content of a page at a specific commit, or None if the
+    commit doesn't belong to this page's history."""
+    git_path = _page_git_path(page_id)
+    if git_path is None:
+        return None
+    entries = wiki_git.log_for_page(get_settings().data_dir, git_path)
+    match = next((e for e in entries if e["sha"] == sha), None)
+    if match is None:
+        return None
+    return wiki_git.content_at_commit(get_settings().data_dir, match["path"], sha)
+
+
+def restore_commit(page_id: int, sha: str, author: str = "owner") -> dict:
+    """Write a historical commit's content back as a new forward commit —
+    never rewrites git history."""
+    content = commit_content(page_id, sha)
+    if content is None:
+        raise ValueError("Unknown commit for this page")
+    return update_page_content(page_id, content, author=author, note=f"restored {sha[:7]}")
+
+
 # --- search ---
 
 
