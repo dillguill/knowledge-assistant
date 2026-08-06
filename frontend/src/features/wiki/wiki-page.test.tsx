@@ -11,11 +11,18 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-// The wiki tree panel (Branch 5) renders the same folder/page names
-// alongside the main content pane, so name-based queries need to be scoped
-// to the content region to stay unambiguous.
+// The wiki tree panel (Branch 5) and, on the folder-browse route, the folder
+// outline (Branch 6) both render the same folder/page names alongside the
+// main content pane, so name-based queries need scoping to stay unambiguous.
 function content() {
   return within(screen.getByRole("region", { name: "Wiki content" }));
+}
+
+// Narrower than content(): excludes the folder outline sibling column, which
+// only exists on the folder-browse route. Async because, unlike "Wiki
+// content", this region only mounts once the tree has finished loading.
+async function folderBrowser() {
+  return within(await screen.findByRole("region", { name: "Folder browser" }));
 }
 
 test("root view shows folder cards and root pages", async () => {
@@ -40,8 +47,9 @@ test("root view shows folder cards and root pages", async () => {
       <WikiPage />
     </SettingsProvider>,
   );
-  expect(await content().findByRole("button", { name: /guides/i })).toBeInTheDocument();
-  expect(content().getByRole("button", { name: /welcome/i })).toBeInTheDocument();
+  const browser = await folderBrowser();
+  expect(await browser.findByRole("button", { name: /guides/i })).toBeInTheDocument();
+  expect(browser.getByRole("button", { name: /welcome/i })).toBeInTheDocument();
 });
 
 test("opening a folder shows a breadcrumb, its subfolders, and its pages with updated-at and author", async () => {
@@ -68,16 +76,18 @@ test("opening a folder shows a breadcrumb, its subfolders, and its pages with up
       <WikiPage />
     </SettingsProvider>,
   );
-  await user.click(await content().findByRole("button", { name: /guides/i }));
+  let browser = await folderBrowser();
+  await user.click(await browser.findByRole("button", { name: /guides/i }));
 
-  const breadcrumb = content().getByRole("navigation", { name: /breadcrumb/i });
+  browser = await folderBrowser();
+  const breadcrumb = browser.getByRole("navigation", { name: /breadcrumb/i });
   expect(breadcrumb).toHaveTextContent("Wiki");
   expect(breadcrumb).toHaveTextContent("Guides");
-  expect(content().getByRole("button", { name: /setup/i })).toBeInTheDocument();
-  const pageRow = content().getByRole("button", { name: /install/i });
+  expect(browser.getByRole("button", { name: /setup/i })).toBeInTheDocument();
+  const pageRow = browser.getByRole("button", { name: /install/i });
   expect(pageRow).toHaveTextContent("assistant");
   // The visible timestamp is now relative; the raw ISO is preserved in `title`.
-  expect(content().getByTitle("2026-07-02")).toBeInTheDocument();
+  expect(browser.getByTitle("2026-07-02")).toBeInTheDocument();
 });
 
 test("an empty folder shows a plain message to a visitor (no owner token)", async () => {
@@ -91,7 +101,7 @@ test("an empty folder shows a plain message to a visitor (no owner token)", asyn
       <WikiPage />
     </SettingsProvider>,
   );
-  await user.click(await content().findByRole("button", { name: /empty/i }));
+  await user.click(await (await folderBrowser()).findByRole("button", { name: /empty/i }));
   expect(await content().findByText("Nothing here yet.")).toBeInTheDocument();
 });
 
@@ -107,7 +117,7 @@ test("an empty folder shows owner-oriented copy when an owner token is set", asy
       <WikiPage />
     </SettingsProvider>,
   );
-  await user.click(await content().findByRole("button", { name: /empty/i }));
+  await user.click(await (await folderBrowser()).findByRole("button", { name: /empty/i }));
   expect(
     await content().findByText(/nothing here yet\. pages and folders you add/i),
   ).toBeInTheDocument();
@@ -145,7 +155,7 @@ test("opening a page renders its content via WikiMarkdown", async () => {
       <WikiPage />
     </SettingsProvider>,
   );
-  await user.click(await content().findByRole("button", { name: /welcome/i }));
+  await user.click(await (await folderBrowser()).findByRole("button", { name: /welcome/i }));
   expect(await screen.findByRole("heading", { name: "Hello wiki" })).toBeInTheDocument();
 });
 
