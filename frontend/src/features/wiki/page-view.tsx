@@ -12,6 +12,7 @@ import { WikiIconButton } from "./wiki-actions";
 import { DeleteConfirmDialog, MoveDialog, RenameDialog } from "./wiki-dialogs";
 import { HistoryPanel } from "./history-panel";
 import { exportPageAsMarkdown, exportPageAsPdf } from "./export";
+import { TableOfContents } from "./table-of-contents";
 
 type PageDialog = null | "rename" | "move" | "delete";
 
@@ -140,115 +141,123 @@ export function WikiPageView({
 
   return (
     <div className="wiki-print-area h-full overflow-y-auto px-6 py-6">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        <nav
-          aria-label="Breadcrumb"
-          className="no-print flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
-        >
-          <button
-            onClick={() => guardedNavigateFolder(null)}
-            className="hover:text-foreground hover:underline"
+      <div className="mx-auto flex max-w-5xl gap-8">
+        <div className="flex min-w-0 max-w-3xl flex-1 flex-col gap-4">
+          <nav
+            aria-label="Breadcrumb"
+            className="no-print flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
           >
-            Wiki
-          </button>
-          {breadcrumb.map((f) => (
-            <span key={f.id} className="flex items-center gap-1">
-              <span aria-hidden="true">/</span>
-              <button
-                onClick={() => guardedNavigateFolder(f.id)}
-                className="hover:text-foreground hover:underline"
-              >
-                {f.name}
-              </button>
-            </span>
-          ))}
-        </nav>
+            <button
+              onClick={() => guardedNavigateFolder(null)}
+              className="hover:text-foreground hover:underline"
+            >
+              Wiki
+            </button>
+            {breadcrumb.map((f) => (
+              <span key={f.id} className="flex items-center gap-1">
+                <span aria-hidden="true">/</span>
+                <button
+                  onClick={() => guardedNavigateFolder(f.id)}
+                  className="hover:text-foreground hover:underline"
+                >
+                  {f.name}
+                </button>
+              </span>
+            ))}
+          </nav>
 
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold">{page.title}</h1>
-            <p className="text-xs text-muted-foreground" title={lastUpdatedAt}>
-              updated {relativeTime(lastUpdatedAt)}
-              {authorKey && <> · {AUTHOR_LABEL[authorKey]}</>}
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-semibold">{page.title}</h1>
+              <p className="text-xs text-muted-foreground" title={lastUpdatedAt}>
+                updated {relativeTime(lastUpdatedAt)}
+                {authorKey && <> · {AUTHOR_LABEL[authorKey]}</>}
+              </p>
+            </div>
+            {mode === "view" && (
+              <div className="no-print flex shrink-0 flex-wrap items-center gap-2">
+                {isOwner && (
+                  <WikiIconButton action="edit" onClick={handleEdit} />
+                )}
+                <WikiIconButton
+                  action="history"
+                  variant={showHistory ? "secondary" : "outline"}
+                  aria-pressed={showHistory}
+                  onClick={() => setShowHistory((v) => !v)}
+                />
+                <WikiIconButton
+                  action="export-md"
+                  onClick={() => exportPageAsMarkdown(page.slug, page.content)}
+                />
+                <WikiIconButton action="export-pdf" onClick={() => exportPageAsPdf()} />
+                {isOwner && (
+                  <>
+                    <span aria-hidden className="mx-1 h-5 w-px bg-border" />
+                    <WikiIconButton action="rename" onClick={() => setDialog("rename")} />
+                    <WikiIconButton action="move" onClick={() => setDialog("move")} />
+                    <WikiIconButton
+                      action="delete"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDialog("delete")}
+                    />
+                  </>
+                )}
+              </div>
+            )}
           </div>
-          {mode === "view" && (
-            <div className="no-print flex shrink-0 flex-wrap items-center gap-2">
-              {isOwner && (
-                <WikiIconButton action="edit" onClick={handleEdit} />
-              )}
-              <WikiIconButton
-                action="history"
-                variant={showHistory ? "secondary" : "outline"}
-                aria-pressed={showHistory}
-                onClick={() => setShowHistory((v) => !v)}
+
+          {error && (
+            <p role="alert" className="no-print text-sm text-destructive">
+              {error}
+            </p>
+          )}
+
+          {mode === "view" && showHistory && (
+            <div className="no-print">
+              <HistoryPanel
+                pageId={page.id}
+                currentContent={page.content}
+                resolve={resolve}
+                isOwner={isOwner}
+                onClose={() => setShowHistory(false)}
+                onRestored={() => {
+                  refresh();
+                  refreshHistory();
+                }}
               />
-              <WikiIconButton
-                action="export-md"
-                onClick={() => exportPageAsMarkdown(page.slug, page.content)}
+            </div>
+          )}
+
+          {mode === "view" ? (
+            <WikiMarkdown content={page.content} resolve={resolve} onNavigate={guardedNavigatePage} />
+          ) : (
+            <div className="no-print flex flex-col gap-3">
+              <PageEditor value={draft} onChange={setDraft} autoFocus />
+              <label htmlFor="save-note" className="sr-only">
+                Note (optional)
+              </label>
+              <Input
+                id="save-note"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="What changed? (optional note)"
               />
-              <WikiIconButton action="export-pdf" onClick={() => exportPageAsPdf()} />
-              {isOwner && (
-                <>
-                  <span aria-hidden className="mx-1 h-5 w-px bg-border" />
-                  <WikiIconButton action="rename" onClick={() => setDialog("rename")} />
-                  <WikiIconButton action="move" onClick={() => setDialog("move")} />
-                  <WikiIconButton
-                    action="delete"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setDialog("delete")}
-                  />
-                </>
-              )}
+              <div className="flex gap-2">
+                <Button onClick={() => void handleSave()} disabled={saving}>
+                  Save
+                </Button>
+                <Button variant="outline" onClick={handleCancel} disabled={saving}>
+                  Cancel
+                </Button>
+              </div>
             </div>
           )}
         </div>
-
-        {error && (
-          <p role="alert" className="no-print text-sm text-destructive">
-            {error}
-          </p>
-        )}
-
-        {mode === "view" && showHistory && (
-          <div className="no-print">
-            <HistoryPanel
-              pageId={page.id}
-              currentContent={page.content}
-              resolve={resolve}
-              isOwner={isOwner}
-              onClose={() => setShowHistory(false)}
-              onRestored={() => {
-                refresh();
-                refreshHistory();
-              }}
-            />
-          </div>
-        )}
-
-        {mode === "view" ? (
-          <WikiMarkdown content={page.content} resolve={resolve} onNavigate={guardedNavigatePage} />
-        ) : (
-          <div className="no-print flex flex-col gap-3">
-            <PageEditor value={draft} onChange={setDraft} autoFocus />
-            <label htmlFor="save-note" className="sr-only">
-              Note (optional)
-            </label>
-            <Input
-              id="save-note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="What changed? (optional note)"
-            />
-            <div className="flex gap-2">
-              <Button onClick={() => void handleSave()} disabled={saving}>
-                Save
-              </Button>
-              <Button variant="outline" onClick={handleCancel} disabled={saving}>
-                Cancel
-              </Button>
-            </div>
-          </div>
+        {mode === "view" && (
+          <TableOfContents
+            content={page.content}
+            className="no-print hidden w-48 shrink-0 xl:block"
+          />
         )}
       </div>
 
