@@ -299,3 +299,126 @@ def test_search_pages_escapes_special_characters():
     # should not raise even though query has FTS special chars
     results = wiki_store.search_pages("torque?")
     assert isinstance(results, list)
+
+
+# --- git sync ---
+
+
+def _git_path(page_id: int) -> str | None:
+    with wiki_store._connect() as conn:
+        row = conn.execute(
+            "SELECT git_path FROM wiki_pages WHERE id = ?", (page_id,)
+        ).fetchone()
+    return row["git_path"] if row else None
+
+
+def test_create_page_writes_git_commit_and_sets_git_path():
+    page = wiki_store.create_page("Torque Specs", None, "content", "owner")
+    assert _git_path(page["id"]) == "wiki/torque-specs.md"
+
+
+def test_update_page_content_writes_git_commit_and_updates_git_path():
+    folder = wiki_store.create_folder("Engines", None)
+    page = wiki_store.create_page("Torque Specs", folder["id"], "v1", "owner")
+    wiki_store.update_page_content(page["id"], "v2", "owner", note="clarify")
+    assert _git_path(page["id"]) == "wiki/engines/torque-specs.md"
+
+
+def test_update_page_content_git_failure_does_not_roll_back_sqlite_write(monkeypatch):
+    page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
+
+    def boom(**kwargs):
+        raise wiki_store.wiki_git.GitCommitError("disk full")
+
+    monkeypatch.setattr(wiki_store.wiki_git, "commit_page", boom)
+    updated = wiki_store.update_page_content(page["id"], "v2", "owner")
+    assert updated["content"] == "v2"
+    assert wiki_store.get_page(page["id"])["content"] == "v2"
+
+
+def test_approve_proposal_sets_commit_sha_on_success():
+    page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
+    proposal = wiki_store.create_proposal(page["id"], "Torque Specs", None, "v2")
+    wiki_store.approve_proposal(proposal["id"])
+    with wiki_store._connect() as conn:
+        row = conn.execute(
+            "SELECT commit_sha FROM wiki_proposals WHERE id = ?", (proposal["id"],)
+        ).fetchone()
+    assert row["commit_sha"] is not None
+
+
+def test_approve_proposal_leaves_commit_sha_null_on_git_failure(monkeypatch):
+    page = wiki_store.create_page("Torque Specs", None, "v1", "owner")
+    proposal = wiki_store.create_proposal(page["id"], "Torque Specs", None, "v2")
+
+    def boom(**kwargs):
+        raise wiki_store.wiki_git.GitCommitError("disk full")
+
+    monkeypatch.setattr(wiki_store.wiki_git, "commit_page", boom)
+    wiki_store.approve_proposal(proposal["id"])
+    with wiki_store._connect() as conn:
+        row = conn.execute(
+            "SELECT commit_sha, status FROM wiki_proposals WHERE id = ?",
+            (proposal["id"],),
+        ).fetchone()
+    assert row["status"] == "approved"
+    assert row["commit_sha"] is None
+
+
+def test_rename_folder_relocates_descendant_page_git_paths():
+    parent = wiki_store.create_folder("Engines", None)
+    page = wiki_store.create_page("Torque Specs", parent["id"], "content", "owner")
+    wiki_store.rename_folder(parent["id"], "Motors")
+    assert _git_path(page["id"]) == "wiki/motors/torque-specs.md"
+
+
+def test_move_folder_relocates_descendant_page_git_paths():
+    a = wiki_store.create_folder("A", None)
+    b = wiki_store.create_folder("B", None)
+    page = wiki_store.create_page("Torque Specs", b["id"], "content", "owner")
+    wiki_store.move_folder(b["id"], a["id"])
+    assert _git_path(page["id"]) == "wiki/a/b/torque-specs.md"
+
+
+def test_move_page_relocates_git_path():
+    folder = wiki_store.create_folder("Engines", None)
+    page = wiki_store.create_page("Torque Specs", None, "content", "owner")
+    wiki_store.move_page(page["id"], folder["id"])
+    assert _git_path(page["id"]) == "wiki/engines/torque-specs.md"
+
+
+def test_delete_page_removes_git_file(data_dir):
+    page = wiki_store.create_page("Torque Specs", None, "content", "owner")
+    git_path = _git_path(page["id"])
+    wiki_store.delete_page(page["id"])
+    repo = wiki_store.wiki_git._repo_dir(str(data_dir))
+    assert not (repo / git_path).exists()
+
+
+def test_folder_path_parts_terminates_on_cycle():
+    a = wiki_store.create_folder("A", None)
+    b = wiki_store.create_folder("B", a["id"])
+    # move_folder has no cycle guard today; corrupt the parent chain directly
+    # via raw SQL to prove _folder_path_parts defends itself against one.
+    with wiki_store._connect() as conn:
+        conn.execute(
+            "UPDATE wiki_folders SET parent_id = ? WHERE id = ?", (b["id"], a["id"])
+        )
+        parts = wiki_store._folder_path_parts(conn, b["id"])
+    assert isinstance(parts, list)
+
+
+def test_resync_page_returns_sha():
+    page = wiki_store.create_page("Torque Specs", None, "content", "owner")
+    assert wiki_store.resync_page(page["id"]) is not None
+
+
+def test_resync_page_raises_for_unknown_page():
+    with pytest.raises(ValueError):
+        wiki_store.resync_page(999)
+
+
+def test_reconcile_git_syncs_all_pages():
+    wiki_store.create_page("Torque Specs", None, "a", "owner")
+    wiki_store.create_page("Oil Change", None, "b", "owner")
+    assert wiki_store.reconcile_git() == 2

@@ -6,7 +6,7 @@ from pathlib import Path
 from app.config import get_settings
 from app.db import store, wiki_store
 from app.main import _startup
-from app.services import sync
+from app.services import sync, wiki_git
 
 
 def test_startup_survives_pull_overwrite(tmp_path, monkeypatch):
@@ -62,5 +62,52 @@ def test_startup_survives_pull_overwrite(tmp_path, monkeypatch):
 
     pages = wiki_store.list_pages()
     assert [p["title"] for p in pages] == ["Welcome to the Wiki"]
+
+    get_settings.cache_clear()
+
+
+def test_startup_initializes_wiki_git_repo_and_reconciles_seeded_page(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+
+    _startup()
+
+    repo = wiki_git._repo_dir(str(tmp_path))
+    assert (repo / ".git").is_dir()
+
+    pages = wiki_store.list_pages()
+    assert len(pages) == 1
+    with wiki_store._connect() as conn:
+        row = conn.execute(
+            "SELECT git_path FROM wiki_pages WHERE id = ?", (pages[0]["id"],)
+        ).fetchone()
+    assert row["git_path"] is not None
+
+    get_settings.cache_clear()
+
+
+def test_startup_reconciles_pages_with_stale_git_path(tmp_path, monkeypatch):
+    """A page whose git_path is NULL with no new edits pending (e.g. written
+    directly by the one-time migration script, bypassing wiki_store's normal
+    git-sync wiring) must still get backfilled by _startup()'s boot-time
+    reconcile — not just by the next real edit."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+    wiki_store.init_wiki(str(tmp_path))
+
+    page = wiki_store.create_page("Torque Specs", None, "content", "owner")
+    with wiki_store._connect() as conn:
+        conn.execute(
+            "UPDATE wiki_pages SET git_path = NULL WHERE id = ?", (page["id"],)
+        )
+
+    _startup()
+
+    with wiki_store._connect() as conn:
+        row = conn.execute(
+            "SELECT git_path FROM wiki_pages WHERE id = ?", (page["id"],)
+        ).fetchone()
+    assert row["git_path"] is not None
 
     get_settings.cache_clear()

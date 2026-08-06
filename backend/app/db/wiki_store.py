@@ -1,11 +1,15 @@
 """SQLite-backed store for wiki folders, pages, versions, and proposals."""
 
 import json
+import logging
 import re
 import sqlite3
 from pathlib import Path
 
 from app.config import get_settings
+from app.services import wiki_git
+
+log = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS wiki_folders (
@@ -87,6 +91,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 (counts[group_key], row[0]),
             )
 
+    if "commit_sha" not in cols:
+        conn.execute("ALTER TABLE wiki_proposals ADD COLUMN commit_sha TEXT")
+
+    page_cols = {row[1] for row in conn.execute("PRAGMA table_info(wiki_pages)").fetchall()}
+    if "git_path" not in page_cols:
+        conn.execute("ALTER TABLE wiki_pages ADD COLUMN git_path TEXT")
+
 
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(_db_path())
@@ -117,6 +128,131 @@ def _unique_slug(conn: sqlite3.Connection, title: str) -> str:
         slug = f"{base}-{n}"
         n += 1
     return slug
+
+
+# --- git sync ---
+#
+# Failure policy is deliberately lenient: SQLite is the source of truth, and
+# every function below is called *after* the SQLite write that matters has
+# already committed (its own `with _connect()` block has exited) — never from
+# inside that transaction. A git failure is logged and swallowed, not raised,
+# so a page write always succeeds for the caller even if git has a transient
+# problem. Every write already re-attempts the sync with fresh content, so a
+# page edited again naturally self-heals; `resync_page`/`reconcile_git` below
+# cover pages that just sit stale with no new edits. See
+# context/v0.4.5_wiki-git-enhancement.md's "Resolved decisions" section.
+
+
+def _folder_path_parts(conn: sqlite3.Connection, folder_id: int | None) -> list[str]:
+    """Root-to-leaf slugified folder-name segments, for deriving a page's git
+    file path. Cycle-safe (visited-set guard): move_folder has no cycle
+    prevention today, so a corrupted parent chain must not hang this walk."""
+    parts: list[str] = []
+    visited: set[int] = set()
+    current = folder_id
+    while current is not None and current not in visited:
+        visited.add(current)
+        row = conn.execute(
+            "SELECT name, parent_id FROM wiki_folders WHERE id = ?", (current,)
+        ).fetchone()
+        if row is None:
+            break
+        parts.append(_slugify(row["name"]))
+        current = row["parent_id"]
+    parts.reverse()
+    return parts
+
+
+def _sync_page_to_git(page_id: int, author: str, note: str = "") -> str | None:
+    """Best-effort: never raises. Commits the page's current content to git
+    and persists the resulting file path. Returns the commit sha, or None if
+    the git commit failed (logged) or the page no longer exists."""
+    page = get_page(page_id)
+    if page is None:
+        return None
+    with _connect() as conn:
+        old_path_row = conn.execute(
+            "SELECT git_path FROM wiki_pages WHERE id = ?", (page_id,)
+        ).fetchone()
+        old_path = old_path_row["git_path"] if old_path_row else None
+        folder_parts = _folder_path_parts(conn, page["folder_id"])
+    try:
+        sha, new_path = wiki_git.commit_page(
+            data_dir=get_settings().data_dir,
+            folder_path_parts=folder_parts,
+            slug=page["slug"],
+            title=page["title"],
+            content=page["content"],
+            created_at=page["created_at"],
+            updated_at=page["updated_at"],
+            author=author,
+            note=note,
+            old_relative_path=old_path,
+        )
+    except wiki_git.GitCommitError:
+        log.error("wiki git commit failed for page %s", page_id, exc_info=True)
+        return None
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE wiki_pages SET git_path = ? WHERE id = ?", (new_path, page_id)
+        )
+    return sha
+
+
+def _descendant_page_ids(conn: sqlite3.Connection, folder_id: int) -> list[int]:
+    """All page ids under folder_id, including nested subfolders. Cycle-safe."""
+    folder_ids: list[int] = []
+    visited: set[int] = set()
+    frontier = [folder_id]
+    while frontier:
+        current = frontier.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        folder_ids.append(current)
+        children = conn.execute(
+            "SELECT id FROM wiki_folders WHERE parent_id = ?", (current,)
+        ).fetchall()
+        frontier.extend(row["id"] for row in children)
+    if not folder_ids:
+        return []
+    placeholders = ",".join("?" * len(folder_ids))
+    rows = conn.execute(
+        f"SELECT id FROM wiki_pages WHERE folder_id IN ({placeholders})", folder_ids
+    ).fetchall()
+    return [row["id"] for row in rows]
+
+
+def _resync_subtree_git(folder_id: int, note: str) -> None:
+    """Re-sync every page under folder_id (recursively) to git — called after
+    a folder rename/move, since every descendant page's file path changes."""
+    with _connect() as conn:
+        page_ids = _descendant_page_ids(conn, folder_id)
+    for page_id in page_ids:
+        _sync_page_to_git(page_id, author="owner", note=note)
+
+
+def resync_page(page_id: int) -> str | None:
+    """Owner-triggered manual re-sync of a single page to git — covers a page
+    that's sat stale with no new edits since a prior git failure."""
+    if get_page(page_id) is None:
+        raise ValueError("Page not found")
+    return _sync_page_to_git(page_id, author="owner", note="resync")
+
+
+def reconcile_git() -> int:
+    """Boot-time backstop: re-sync every page to git. Safe to call
+    unconditionally — commit_page is no-op-safe, so already-synced pages
+    produce no new commits. Returns the number of pages successfully synced
+    (informational, for a boot log line — not a strict "changed" count)."""
+    synced = 0
+    for page in list_pages():
+        sha = _sync_page_to_git(
+            page["id"], author=page["last_author"] or "owner", note="reconcile"
+        )
+        if sha is not None:
+            synced += 1
+    return synced
 
 
 # --- folders ---
@@ -191,6 +327,7 @@ def rename_folder(folder_id: int, name: str) -> None:
         conn.execute(
             "UPDATE wiki_folders SET name = ? WHERE id = ?", (name, folder_id)
         )
+    _resync_subtree_git(folder_id, note="folder path changed")
 
 
 def move_folder(folder_id: int, parent_id: int | None) -> None:
@@ -206,6 +343,7 @@ def move_folder(folder_id: int, parent_id: int | None) -> None:
             "UPDATE wiki_folders SET parent_id = ? WHERE id = ?",
             (parent_id, folder_id),
         )
+    _resync_subtree_git(folder_id, note="folder path changed")
 
 
 def delete_folder(folder_id: int) -> None:
@@ -273,7 +411,9 @@ def _create_page_tx(
 
 def create_page(title: str, folder_id: int | None, content: str, author: str) -> dict:
     with _connect() as conn:
-        return _create_page_tx(conn, title, folder_id, content, author)
+        page = _create_page_tx(conn, title, folder_id, content, author)
+    _sync_page_to_git(page["id"], author, note="created")
+    return page
 
 
 def get_page(page_id: int) -> dict | None:
@@ -364,7 +504,9 @@ def update_page_content(
     citations: list | None = None,
 ) -> dict:
     with _connect() as conn:
-        return _update_page_content_tx(conn, page_id, content, author, note, citations)
+        page = _update_page_content_tx(conn, page_id, content, author, note, citations)
+    _sync_page_to_git(page_id, author, note)
+    return page
 
 
 def rename_page(page_id: int, title: str) -> None:
@@ -380,6 +522,7 @@ def rename_page(page_id: int, title: str) -> None:
             "INSERT INTO wiki_pages_fts (rowid, title, content) VALUES (?, ?, ?)",
             (page_id, title, row["content"]),
         )
+    _sync_page_to_git(page_id, author="owner", note=f"renamed to {title}")
 
 
 def move_page(page_id: int, folder_id: int | None) -> None:
@@ -387,12 +530,25 @@ def move_page(page_id: int, folder_id: int | None) -> None:
         conn.execute(
             "UPDATE wiki_pages SET folder_id = ? WHERE id = ?", (folder_id, page_id)
         )
+    _sync_page_to_git(page_id, author="owner", note="moved to a different folder")
 
 
 def delete_page(page_id: int) -> None:
     with _connect() as conn:
+        row = conn.execute(
+            "SELECT git_path FROM wiki_pages WHERE id = ?", (page_id,)
+        ).fetchone()
+        old_path = row["git_path"] if row else None
         conn.execute("DELETE FROM wiki_pages_fts WHERE rowid = ?", (page_id,))
         conn.execute("DELETE FROM wiki_pages WHERE id = ?", (page_id,))
+    if old_path is not None:
+        try:
+            wiki_git.delete_page_file(
+                data_dir=get_settings().data_dir, relative_path=old_path,
+                author="owner", note="deleted",
+            )
+        except wiki_git.GitCommitError:
+            log.error("wiki git delete failed for page %s", page_id, exc_info=True)
 
 
 # --- versions ---
@@ -562,6 +718,17 @@ def approve_proposal(proposal_id: int) -> dict:
                WHERE id = ?""",
             (proposal_id,),
         )
+
+    sha = _sync_page_to_git(
+        page["id"], author="assistant",
+        note=f"approved proposal #{proposal['proposal_number']}",
+    )
+    if sha is not None:
+        with _connect() as conn:
+            conn.execute(
+                "UPDATE wiki_proposals SET commit_sha = ? WHERE id = ?",
+                (sha, proposal_id),
+            )
     return page
 
 
