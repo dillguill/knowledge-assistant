@@ -297,6 +297,86 @@ def content_at_commit(data_dir: str, path: str, sha: str) -> str | None:
     return body
 
 
+# --- remote sync (HF dataset repo) ---
+
+
+def remote_url(token: str, dataset_repo: str) -> str:
+    """Authenticated HTTPS git remote URL for the HF dataset repo.
+
+    Uses the real account username embedded in dataset_repo's "owner/name"
+    form, not a placeholder — HF's git-auth docs
+    (huggingface.co/blog/password-git-deprecation) are explicit that the
+    username field must be the actual account name, confirmed directly
+    against current docs rather than assumed.
+    """
+    username = dataset_repo.split("/", 1)[0]
+    return f"https://{username}:{token}@huggingface.co/datasets/{dataset_repo}"
+
+
+def ensure_remote(data_dir: str, url: str) -> None:
+    """Idempotently point the wiki git repo's "origin" at `url`, updating it
+    every call — a rotated HF_TOKEN changes the embedded credential, so this
+    must not skip once "origin" already exists."""
+    repo = ensure_repo(data_dir)
+    result = _git(["remote", "get-url", "origin"], repo)
+    if result.returncode != 0:
+        _git(["remote", "add", "origin", url], repo)
+    else:
+        _git(["remote", "set-url", "origin", url], repo)
+
+
+def push(data_dir: str) -> None:
+    """Push local commits to whatever "origin" is currently configured to.
+
+    No --force: a force-push would silently discard whatever the remote has
+    that we don't. Instead, a rejected (non-fast-forward) push gets exactly
+    one bounded retry — fetch, rebase local commits on top, push again —
+    covering the residual case of a brief overlap between writers (e.g. two
+    Space instances momentarily coexisting during a restart/redeploy)
+    despite the single-writer invariant. Not a substitute for keeping
+    logically independent write paths on separate branches (see sync.py) —
+    just defense-in-depth for the one case separate branches don't remove.
+    If the rebase itself conflicts, it's aborted cleanly and the failure is
+    raised rather than papered over.
+    """
+    repo = _repo_dir(data_dir)
+    result = _git(["push", "origin", "main"], repo)
+    if result.returncode == 0:
+        return
+
+    fetch_result = _git(["fetch", "origin"], repo)
+    if fetch_result.returncode != 0:
+        raise GitCommitError(result.stderr or result.stdout)
+
+    rebase_result = _git(["rebase", "origin/main"], repo)
+    if rebase_result.returncode != 0:
+        _git(["rebase", "--abort"], repo)
+        raise GitCommitError(
+            f"push rejected and could not be auto-resolved: "
+            f"{rebase_result.stderr or rebase_result.stdout}"
+        )
+
+    retry_result = _git(["push", "origin", "main"], repo)
+    if retry_result.returncode != 0:
+        raise GitCommitError(retry_result.stderr or retry_result.stdout)
+
+
+def pull_or_clone(data_dir: str) -> None:
+    """Fetch "origin" and hard-reset local main to it if the remote has any
+    history; a brand-new empty remote is a no-op (first boot), mirroring
+    sync.pull()'s existing tolerance for a not-yet-populated dataset repo."""
+    repo = _repo_dir(data_dir)
+    fetch_result = _git(["fetch", "origin"], repo)
+    if fetch_result.returncode != 0:
+        raise GitCommitError(fetch_result.stderr or fetch_result.stdout)
+    remote_head = _git(["rev-parse", "origin/main"], repo)
+    if remote_head.returncode != 0:
+        return
+    reset_result = _git(["reset", "--hard", "origin/main"], repo)
+    if reset_result.returncode != 0:
+        raise GitCommitError(reset_result.stderr or reset_result.stdout)
+
+
 def delete_page_file(*, data_dir: str, relative_path: str, author: str, note: str = "") -> str:
     repo = ensure_repo(data_dir)
     full_path = repo / relative_path

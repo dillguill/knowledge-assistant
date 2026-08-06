@@ -26,9 +26,15 @@ def _startup() -> None:
     store.init_db(settings.data_dir)
     sync.pull()
     wiki_store.init_wiki(settings.data_dir)
+    # ensure_repo/pull_wiki_git must run before anything (seeding,
+    # reconcile_git) trusts local wiki git state — a naive local-init-first
+    # ordering would create a divergent local history on a fresh container
+    # whose HF dataset repo already has real wiki git history from a prior
+    # instance's push.
+    wiki_git.ensure_repo(settings.data_dir)
+    sync.pull_wiki_git()
     seed_demo_corpus()
     seed_wiki()
-    wiki_git.ensure_repo(settings.data_dir)
     wiki_store.reconcile_git()
 
 
