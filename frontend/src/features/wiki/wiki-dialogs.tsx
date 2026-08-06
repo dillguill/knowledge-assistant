@@ -10,6 +10,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   createFolder,
   createPage,
   deleteFolder,
@@ -55,6 +62,8 @@ function flattenFolders(
   return options;
 }
 
+const ROOT_FOLDER = "__root__";
+
 function FolderSelect({
   id,
   value,
@@ -67,18 +76,21 @@ function FolderSelect({
   options: { id: number | null; label: string }[];
 }) {
   return (
-    <select
-      id={id}
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
-      className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    <Select
+      value={value === null ? ROOT_FOLDER : String(value)}
+      onValueChange={(v) => onChange(v === ROOT_FOLDER ? null : Number(v))}
     >
-      {options.map((o) => (
-        <option key={o.id ?? "root"} value={o.id ?? ""}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger id={id} className="w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.id ?? "root"} value={o.id === null ? ROOT_FOLDER : String(o.id)}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

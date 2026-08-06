@@ -2,8 +2,17 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { API_URL, useBackend } from "@/features/chat/chat-provider";
 import { useModels } from "@/features/chat/use-models";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useSettings } from "./settings-provider";
 import type { ThemeSetting } from "./settings-storage";
+
+const BACKEND_DEFAULT_MODEL = "__backend_default__";
 
 const THEMES: { value: ThemeSetting; label: string }[] = [
   { value: "light", label: "Light" },
@@ -77,22 +86,30 @@ export function SettingsPage() {
           <label htmlFor="default-model" className="sr-only">
             Default model
           </label>
-          <select
-            id="default-model"
-            className={inputClass}
-            disabled={models.length === 0}
-            value={settings.defaultModel ?? ""}
-            onChange={(e) =>
-              settings.update("defaultModel", e.target.value || null)
+          <Select
+            value={settings.defaultModel ?? BACKEND_DEFAULT_MODEL}
+            onValueChange={(v) =>
+              settings.update(
+                "defaultModel",
+                v === BACKEND_DEFAULT_MODEL ? null : v,
+              )
             }
+            disabled={models.length === 0}
           >
-            <option value="">Backend default</option>
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="default-model" className="w-full max-w-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={BACKEND_DEFAULT_MODEL}>
+                Backend default
+              </SelectItem>
+              {models.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Section>
 
         <Section
