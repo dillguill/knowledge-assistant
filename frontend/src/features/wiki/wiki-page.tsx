@@ -15,6 +15,7 @@ import {
   RenameDialog,
   type PageOrFolderTarget,
 } from "./wiki-dialogs";
+import { WikiTreePanel } from "./wiki-tree-panel";
 
 type WikiRoute =
   | { kind: "folder"; id: number | null }
@@ -226,28 +227,50 @@ export function WikiPage({
     setRoute({ kind: "folder", id: null });
   }, [homeToken]);
 
+  const treePanel = !treeLoading && !treeError && (
+    <WikiTreePanel
+      tree={tree}
+      activeFolderId={route.kind === "folder" ? route.id : null}
+      activeSlug={route.kind === "page" ? route.slug : null}
+      onNavigateFolder={onNavigateFolder}
+      onNavigatePage={onNavigatePage}
+    />
+  );
+
   if (route.kind === "page") {
     return (
-      <WikiPageView
-        slug={route.slug}
-        tree={tree}
-        resolve={resolve}
-        startInEdit={route.edit}
-        onNavigateFolder={onNavigateFolder}
-        onNavigatePage={onNavigatePage}
-      />
+      <div className="flex h-full min-h-0">
+        {treePanel}
+        <div role="region" aria-label="Wiki content" className="min-w-0 flex-1">
+          <WikiPageView
+            slug={route.slug}
+            tree={tree}
+            resolve={resolve}
+            startInEdit={route.edit}
+            onNavigateFolder={onNavigateFolder}
+            onNavigatePage={onNavigatePage}
+          />
+        </div>
+      </div>
     );
   }
 
   if (route.kind === "proposals") {
     return (
-      <div className="h-full overflow-y-auto px-6 py-6">
-        <div className="mx-auto mb-4 flex max-w-3xl">
-          <Button size="sm" variant="ghost" onClick={() => onNavigateFolder(null)}>
-            ← Back to wiki
-          </Button>
+      <div className="flex h-full min-h-0">
+        {treePanel}
+        <div
+          role="region"
+          aria-label="Wiki content"
+          className="h-full min-w-0 flex-1 overflow-y-auto px-6 py-6"
+        >
+          <div className="mx-auto mb-4 flex max-w-3xl">
+            <Button size="sm" variant="ghost" onClick={() => onNavigateFolder(null)}>
+              ← Back to wiki
+            </Button>
+          </div>
+          <ProposalsInbox onApproved={onNavigatePage} />
         </div>
-        <ProposalsInbox onApproved={onNavigatePage} />
       </div>
     );
   }
@@ -255,84 +278,91 @@ export function WikiPage({
   const node = route.id !== null ? (tree.byId.get(route.id) ?? null) : null;
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-6">
-      {treeLoading ? (
-        <p className="mx-auto max-w-3xl text-sm text-muted-foreground">Loading wiki…</p>
-      ) : treeError ? (
-        <p role="alert" className="mx-auto max-w-3xl text-sm text-destructive">
-          {treeError}
-        </p>
-      ) : (
-        <>
-          <div className="mx-auto mb-4 flex max-w-3xl items-center justify-end gap-2">
-            <span className="text-xs text-muted-foreground">AI edit suggestions</span>
-            <div className="relative">
-              <WikiIconButton
-                action="proposals"
-                onClick={() => setRoute({ kind: "proposals" })}
-              />
-              {pendingCount !== null && pendingCount > 0 && (
-                <span className="pointer-events-none absolute -end-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
-                  {pendingCount}
-                </span>
-              )}
+    <div className="flex h-full min-h-0">
+      {treePanel}
+      <div
+        role="region"
+        aria-label="Wiki content"
+        className="h-full min-w-0 flex-1 overflow-y-auto px-6 py-6"
+      >
+        {treeLoading ? (
+          <p className="mx-auto max-w-3xl text-sm text-muted-foreground">Loading wiki…</p>
+        ) : treeError ? (
+          <p role="alert" className="mx-auto max-w-3xl text-sm text-destructive">
+            {treeError}
+          </p>
+        ) : (
+          <>
+            <div className="mx-auto mb-4 flex max-w-3xl items-center justify-end gap-2">
+              <span className="text-xs text-muted-foreground">AI edit suggestions</span>
+              <div className="relative">
+                <WikiIconButton
+                  action="proposals"
+                  onClick={() => setRoute({ kind: "proposals" })}
+                />
+                {pendingCount !== null && pendingCount > 0 && (
+                  <span className="pointer-events-none absolute -end-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                    {pendingCount}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-          {isOwner && (
-            <FolderToolbar
-              folderId={route.id}
-              node={node}
+            {isOwner && (
+              <FolderToolbar
+                folderId={route.id}
+                node={node}
+                tree={tree}
+                onChanged={refreshTree}
+                onCreatedPage={(slug) => setRoute({ kind: "page", slug, edit: true })}
+                onDeletedFolder={(parentId) => onNavigateFolder(parentId)}
+              />
+            )}
+            <FolderView
               tree={tree}
-              onChanged={refreshTree}
-              onCreatedPage={(slug) => setRoute({ kind: "page", slug, edit: true })}
-              onDeletedFolder={(parentId) => onNavigateFolder(parentId)}
+              folderId={route.id}
+              isOwner={isOwner}
+              onNavigateFolder={onNavigateFolder}
+              onNavigatePage={onNavigatePage}
+              onItemAction={handleItemAction}
             />
-          )}
-          <FolderView
-            tree={tree}
-            folderId={route.id}
-            isOwner={isOwner}
-            onNavigateFolder={onNavigateFolder}
-            onNavigatePage={onNavigatePage}
-            onItemAction={handleItemAction}
-          />
-        </>
-      )}
+          </>
+        )}
 
-      {rowTarget && rowDialog === "rename" && (
-        <RenameDialog
-          open
-          onOpenChange={(open) => !open && closeRow()}
-          target={rowTarget}
-          onRenamed={() => {
-            closeRow();
-            refreshTree();
-          }}
-        />
-      )}
-      {rowTarget && rowDialog === "move" && (
-        <MoveDialog
-          open
-          onOpenChange={(open) => !open && closeRow()}
-          target={rowTarget}
-          tree={tree}
-          onMoved={() => {
-            closeRow();
-            refreshTree();
-          }}
-        />
-      )}
-      {rowTarget && rowDialog === "delete" && (
-        <DeleteConfirmDialog
-          open
-          onOpenChange={(open) => !open && closeRow()}
-          target={rowTarget}
-          onDeleted={() => {
-            closeRow();
-            refreshTree();
-          }}
-        />
-      )}
+        {rowTarget && rowDialog === "rename" && (
+          <RenameDialog
+            open
+            onOpenChange={(open) => !open && closeRow()}
+            target={rowTarget}
+            onRenamed={() => {
+              closeRow();
+              refreshTree();
+            }}
+          />
+        )}
+        {rowTarget && rowDialog === "move" && (
+          <MoveDialog
+            open
+            onOpenChange={(open) => !open && closeRow()}
+            target={rowTarget}
+            tree={tree}
+            onMoved={() => {
+              closeRow();
+              refreshTree();
+            }}
+          />
+        )}
+        {rowTarget && rowDialog === "delete" && (
+          <DeleteConfirmDialog
+            open
+            onOpenChange={(open) => !open && closeRow()}
+            target={rowTarget}
+            onDeleted={() => {
+              closeRow();
+              refreshTree();
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

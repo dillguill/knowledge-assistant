@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { WikiPage } from "./wiki-page";
@@ -10,6 +10,13 @@ beforeEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
 });
+
+// The wiki tree panel (Branch 5) renders the same folder/page names
+// alongside the main content pane, so name-based queries need to be scoped
+// to the content region to stay unambiguous.
+function content() {
+  return within(screen.getByRole("region", { name: "Wiki content" }));
+}
 
 test("root view shows folder cards and root pages", async () => {
   vi.spyOn(api, "getTree").mockResolvedValue({
@@ -33,8 +40,8 @@ test("root view shows folder cards and root pages", async () => {
       <WikiPage />
     </SettingsProvider>,
   );
-  expect(await screen.findByRole("button", { name: /guides/i })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /welcome/i })).toBeInTheDocument();
+  expect(await content().findByRole("button", { name: /guides/i })).toBeInTheDocument();
+  expect(content().getByRole("button", { name: /welcome/i })).toBeInTheDocument();
 });
 
 test("opening a folder shows a breadcrumb, its subfolders, and its pages with updated-at and author", async () => {
@@ -61,16 +68,16 @@ test("opening a folder shows a breadcrumb, its subfolders, and its pages with up
       <WikiPage />
     </SettingsProvider>,
   );
-  await user.click(await screen.findByRole("button", { name: /guides/i }));
+  await user.click(await content().findByRole("button", { name: /guides/i }));
 
-  const breadcrumb = screen.getByRole("navigation", { name: /breadcrumb/i });
+  const breadcrumb = content().getByRole("navigation", { name: /breadcrumb/i });
   expect(breadcrumb).toHaveTextContent("Wiki");
   expect(breadcrumb).toHaveTextContent("Guides");
-  expect(screen.getByRole("button", { name: /setup/i })).toBeInTheDocument();
-  const pageRow = screen.getByRole("button", { name: /install/i });
+  expect(content().getByRole("button", { name: /setup/i })).toBeInTheDocument();
+  const pageRow = content().getByRole("button", { name: /install/i });
   expect(pageRow).toHaveTextContent("assistant");
   // The visible timestamp is now relative; the raw ISO is preserved in `title`.
-  expect(screen.getByTitle("2026-07-02")).toBeInTheDocument();
+  expect(content().getByTitle("2026-07-02")).toBeInTheDocument();
 });
 
 test("an empty folder shows a plain message to a visitor (no owner token)", async () => {
@@ -84,8 +91,8 @@ test("an empty folder shows a plain message to a visitor (no owner token)", asyn
       <WikiPage />
     </SettingsProvider>,
   );
-  await user.click(await screen.findByRole("button", { name: /empty/i }));
-  expect(await screen.findByText("Nothing here yet.")).toBeInTheDocument();
+  await user.click(await content().findByRole("button", { name: /empty/i }));
+  expect(await content().findByText("Nothing here yet.")).toBeInTheDocument();
 });
 
 test("an empty folder shows owner-oriented copy when an owner token is set", async () => {
@@ -100,9 +107,9 @@ test("an empty folder shows owner-oriented copy when an owner token is set", asy
       <WikiPage />
     </SettingsProvider>,
   );
-  await user.click(await screen.findByRole("button", { name: /empty/i }));
+  await user.click(await content().findByRole("button", { name: /empty/i }));
   expect(
-    await screen.findByText(/nothing here yet\. pages and folders you add/i),
+    await content().findByText(/nothing here yet\. pages and folders you add/i),
   ).toBeInTheDocument();
 });
 
@@ -138,7 +145,7 @@ test("opening a page renders its content via WikiMarkdown", async () => {
       <WikiPage />
     </SettingsProvider>,
   );
-  await user.click(await screen.findByRole("button", { name: /welcome/i }));
+  await user.click(await content().findByRole("button", { name: /welcome/i }));
   expect(await screen.findByRole("heading", { name: "Hello wiki" })).toBeInTheDocument();
 });
 
@@ -193,4 +200,52 @@ test("an owner can create a new page, which navigates straight to its editor", a
   // Lands directly in the editor for the freshly-created page.
   expect(await screen.findByRole("button", { name: /^save$/i })).toBeInTheDocument();
   expect(document.querySelector(".cm-content")).toBeInTheDocument();
+});
+
+test("the wiki tree panel renders alongside the content pane and drives navigation", async () => {
+  vi.spyOn(api, "getTree").mockResolvedValue({
+    folders: [
+      { id: 1, name: "Guides", parent_id: null, position: 0, created_at: "t" },
+    ],
+    pages: [
+      {
+        id: 1,
+        folder_id: 1,
+        title: "Install",
+        slug: "install",
+        position: 0,
+        updated_at: "2026-07-02",
+        last_author: "owner",
+      },
+    ],
+  });
+  vi.spyOn(api, "getPageBySlug").mockResolvedValue({
+    id: 1,
+    folder_id: 1,
+    title: "Install",
+    slug: "install",
+    position: 0,
+    updated_at: "2026-07-02",
+    last_author: "owner",
+    content: "# Install steps",
+    last_version: { author: "owner", created_at: "2026-07-02", note: "" },
+  });
+  const user = userEvent.setup();
+  render(
+    <SettingsProvider>
+      <WikiPage />
+    </SettingsProvider>,
+  );
+
+  await screen.findByRole("navigation", { name: "Wiki contents" });
+  const panel = () => within(screen.getByRole("navigation", { name: "Wiki contents" }));
+  await panel().findByText("Guides");
+  await user.click(panel().getByRole("button", { name: "Expand Guides" }));
+  await user.click(await panel().findByText("Install"));
+
+  expect(await screen.findByRole("heading", { name: "Install steps" })).toBeInTheDocument();
+  expect(panel().getByText("Install").closest("button")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 });
