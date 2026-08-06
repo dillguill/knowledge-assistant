@@ -33,16 +33,15 @@ export type WikiPage = WikiPageSummary & {
 
 export type WikiTree = { folders: WikiFolder[]; pages: WikiPageSummary[] };
 
-export type WikiVersion = {
-  id: number;
+export type WikiHistoryEntry = {
+  sha: string;
   author: "owner" | "assistant";
   note: string;
-  citations: unknown[];
   created_at: string;
 };
 
-export type WikiVersionDetail = WikiVersion & {
-  page_id: number;
+export type WikiCommitDetail = {
+  sha: string;
   content: string;
 };
 
@@ -228,29 +227,34 @@ export async function deletePage(pageId: number): Promise<void> {
   bumpWikiData();
 }
 
-// ---- Versions ----
+// ---- History ----
 
-export async function listVersions(pageId: number): Promise<WikiVersion[]> {
+export async function getPageHistory(pageId: number): Promise<WikiHistoryEntry[]> {
   const res = await check(
-    await fetch(`${base()}/api/wiki/pages/${pageId}/versions`),
+    await fetch(`${base()}/api/wiki/pages/${pageId}/history`),
   );
-  return (await res.json()).versions;
+  return (await res.json()).history;
 }
 
-export async function getVersion(versionId: number): Promise<WikiVersionDetail> {
-  const res = await check(await fetch(`${base()}/api/wiki/versions/${versionId}`));
+export async function getCommit(
+  pageId: number,
+  sha: string,
+): Promise<WikiCommitDetail> {
+  const res = await check(
+    await fetch(`${base()}/api/wiki/pages/${pageId}/commits/${encodeURIComponent(sha)}`),
+  );
   return res.json();
 }
 
-export async function restoreVersion(
+export async function restoreCommit(
   pageId: number,
-  versionId: number,
+  sha: string,
 ): Promise<WikiPage> {
   const res = await check(
-    await fetch(`${base()}/api/wiki/pages/${pageId}/restore/${versionId}`, {
-      method: "POST",
-      headers: ownerHeaders(),
-    }),
+    await fetch(
+      `${base()}/api/wiki/pages/${pageId}/restore/${encodeURIComponent(sha)}`,
+      { method: "POST", headers: ownerHeaders() },
+    ),
   );
   return bumped(await res.json());
 }

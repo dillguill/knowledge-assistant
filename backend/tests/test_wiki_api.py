@@ -136,8 +136,8 @@ async def test_page_put_creates_version():
         assert body["last_version"]["author"] == "owner"
         assert body["last_version"]["note"] == "updated torque"
 
-        r = await c.get(f"/api/wiki/pages/{page['id']}/versions")
-        assert len(r.json()["versions"]) == 2
+        r = await c.get(f"/api/wiki/pages/{page['id']}/history")
+        assert len(r.json()["history"]) == 2
 
         r = await c.put("/api/wiki/pages/999", json={"content": "x"}, headers=OWNER)
         assert r.status_code == 404
@@ -166,6 +166,51 @@ async def test_page_patch_and_delete():
                                headers=OWNER)).status_code == 404
 
 
+async def test_page_history_endpoint_newest_first():
+    async with client() as c:
+        page = (await c.post(
+            "/api/wiki/pages",
+            json={"title": "Page A", "folder_id": None, "content": "a1"},
+            headers=OWNER,
+        )).json()
+        await c.put(f"/api/wiki/pages/{page['id']}",
+                    json={"content": "a2"}, headers=OWNER)
+
+        r = await c.get(f"/api/wiki/pages/{page['id']}/history")
+        assert r.status_code == 200
+        history = r.json()["history"]
+        assert len(history) == 2
+        for entry in history:
+            assert set(entry) == {"sha", "author", "note", "created_at"}
+
+        assert (await c.get("/api/wiki/pages/999/history")).status_code == 404
+
+
+async def test_page_commit_endpoint_returns_historical_content():
+    async with client() as c:
+        page = (await c.post(
+            "/api/wiki/pages",
+            json={"title": "Page A", "folder_id": None, "content": "a1"},
+            headers=OWNER,
+        )).json()
+        original_sha = (await c.get(
+            f"/api/wiki/pages/{page['id']}/history"
+        )).json()["history"][0]["sha"]
+        await c.put(f"/api/wiki/pages/{page['id']}",
+                    json={"content": "a2"}, headers=OWNER)
+
+        r = await c.get(f"/api/wiki/pages/{page['id']}/commits/{original_sha}")
+        assert r.status_code == 200
+        assert r.json() == {"sha": original_sha, "content": "a1"}
+
+        assert (await c.get(
+            f"/api/wiki/pages/{page['id']}/commits/deadbeef"
+        )).status_code == 404
+        assert (await c.get(
+            f"/api/wiki/pages/999/commits/{original_sha}"
+        )).status_code == 404
+
+
 async def test_restore_happy_path_and_wrong_page_404():
     async with client() as c:
         page_a = (await c.post(
@@ -179,32 +224,30 @@ async def test_restore_happy_path_and_wrong_page_404():
             headers=OWNER,
         )).json()
 
+        original_sha = (await c.get(
+            f"/api/wiki/pages/{page_a['id']}/history"
+        )).json()["history"][0]["sha"]
         await c.put(f"/api/wiki/pages/{page_a['id']}",
                     json={"content": "a2"}, headers=OWNER)
 
-        versions = (await c.get(
-            f"/api/wiki/pages/{page_a['id']}/versions"
-        )).json()["versions"]
-        original_version_id = min(v["id"] for v in versions)
-
         r = await c.post(
-            f"/api/wiki/pages/{page_a['id']}/restore/{original_version_id}",
+            f"/api/wiki/pages/{page_a['id']}/restore/{original_sha}",
             headers=OWNER,
         )
         assert r.status_code == 200
         body = r.json()
         assert body["content"] == "a1"
-        assert body["last_version"]["note"] == f"restored v{original_version_id}"
+        assert body["last_version"]["note"].startswith("restored ")
 
-        # version exists, but belongs to page_a, not page_b
+        # sha exists, but belongs to page_a, not page_b
         r = await c.post(
-            f"/api/wiki/pages/{page_b['id']}/restore/{original_version_id}",
+            f"/api/wiki/pages/{page_b['id']}/restore/{original_sha}",
             headers=OWNER,
         )
         assert r.status_code == 404
 
         r = await c.post(
-            f"/api/wiki/pages/{page_a['id']}/restore/999", headers=OWNER
+            f"/api/wiki/pages/{page_a['id']}/restore/deadbeef", headers=OWNER
         )
         assert r.status_code == 404
 

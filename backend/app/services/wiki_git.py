@@ -216,6 +216,87 @@ def has_commits(data_dir: str) -> bool:
     return _current_head(repo) is not None
 
 
+def _extract_trailer(body: str, key: str) -> str | None:
+    prefix = f"{key}: "
+    for line in body.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix):].strip()
+    return None
+
+
+def log_for_page(data_dir: str, slug: str) -> list[dict]:
+    """Commit history for a page, identified by its immutable slug (embedded
+    in each commit's frontmatter), newest first. Each entry's "path" is the
+    file's path AS OF that commit — a page's current path may differ if it's
+    been moved since, and content_at_commit needs the historical path, not
+    today's.
+
+    Deliberately does NOT use git's --follow/rename-similarity detection.
+    Two distinct pages with short, near-identical frontmatter (differing
+    only in title/slug) can exceed git's default ~50% similarity threshold,
+    making --follow spuriously treat one page's creation as a "rename" of a
+    completely unrelated page — a real bug caught while building this
+    (restoring page B could return page A's content). Slug identity is the
+    correct correlation key instead: it's immutable and globally unique
+    (see SCHEMA.md), embedded in the file itself, and unaffected by however
+    similar or different two pages' content happens to look.
+    """
+    repo = ensure_repo(data_dir)
+    result = _git(
+        ["log", "--name-only", "--format=%x1e%H%x1f%an%x1f%aI%x1f%s"],
+        repo,
+    )
+    if result.returncode != 0:
+        return []
+
+    entries: list[dict] = []
+    for record in result.stdout.split("\x1e"):
+        if not record.strip():
+            continue
+        header, _, filename_block = record.partition("\n\n")
+        sha, _, rest = header.partition("\x1f")
+        author_name, _, rest = rest.partition("\x1f")
+        iso_date, _, subject = rest.partition("\x1f")
+        changed_paths = [line for line in filename_block.splitlines() if line.strip()]
+
+        matched_path = None
+        for path in changed_paths:
+            show_result = _git(["show", f"{sha}:{path}"], repo)
+            if show_result.returncode != 0:
+                continue
+            fields, _ = parse_frontmatter(show_result.stdout)
+            if fields.get("slug") == slug:
+                matched_path = path
+                break
+        if matched_path is None:
+            continue
+
+        body_result = _git(["show", "-s", "--format=%B", sha], repo)
+        body = body_result.stdout if body_result.returncode == 0 else ""
+        author = _extract_trailer(body, "wiki-author") or author_name
+
+        entries.append({
+            "sha": sha,
+            "author": author,
+            "note": subject,
+            "created_at": iso_date,
+            "path": matched_path,
+        })
+    return entries
+
+
+def content_at_commit(data_dir: str, path: str, sha: str) -> str | None:
+    """Body content (frontmatter stripped) of a page's file as of a specific
+    commit. `path` must be the file's path AS OF that commit — see
+    log_for_page's "path" field. Returns None if the sha/path is unknown."""
+    repo = ensure_repo(data_dir)
+    result = _git(["show", f"{sha}:{path}"], repo)
+    if result.returncode != 0:
+        return None
+    _, body = parse_frontmatter(result.stdout)
+    return body
+
+
 def delete_page_file(*, data_dir: str, relative_path: str, author: str, note: str = "") -> str:
     repo = ensure_repo(data_dir)
     full_path = repo / relative_path

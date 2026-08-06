@@ -35,9 +35,10 @@ async def test_create_proposal_for_existing_page_captures_base_version_id():
             json={"title": "Oil change", "folder_id": None, "content": "v1"},
             headers=OWNER,
         )).json()
-        versions = (await c.get(
-            f"/api/wiki/pages/{page['id']}/versions"
-        )).json()["versions"]
+        # wiki_versions is still written as a dual-write safety net (not
+        # exposed via HTTP anymore — the history endpoint reads git instead),
+        # so check it directly at the store level.
+        versions = wiki_store.list_versions(page["id"])
         base_version_id = versions[0]["id"]
 
         r = await c.post(
@@ -126,9 +127,7 @@ async def test_approve_existing_page_proposal_replaces_content_and_carries_citat
         assert body["content"] == "v2 proposed"
         assert body["last_version"]["author"] == "assistant"
 
-        versions = (await c.get(
-            f"/api/wiki/pages/{page['id']}/versions"
-        )).json()["versions"]
+        versions = wiki_store.list_versions(page["id"])
         assert len(versions) == 2
         latest = versions[0]
         assert latest["author"] == "assistant"
@@ -153,8 +152,7 @@ async def test_approve_new_page_proposal_creates_page_with_assistant_author():
         assert body["content"] == "fresh content"
         assert body["last_version"]["author"] == "assistant"
 
-        r = await c.get(f"/api/wiki/pages/{body['id']}/versions")
-        versions = r.json()["versions"]
+        versions = wiki_store.list_versions(body["id"])
         assert len(versions) == 1
         assert versions[0]["author"] == "assistant"
 

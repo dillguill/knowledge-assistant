@@ -197,33 +197,32 @@ async def resync_page(page_id: int) -> dict:
     return {"commit_sha": commit_sha}
 
 
-@router.get("/pages/{page_id}/versions")
-async def get_page_versions(page_id: int) -> dict:
+@router.get("/pages/{page_id}/history")
+async def get_page_history(page_id: int) -> dict:
     if wiki_store.get_page(page_id) is None:
         raise HTTPException(404, "Unknown page.")
-    return {"versions": wiki_store.list_versions(page_id)}
+    return {"history": wiki_store.page_history(page_id)}
 
 
-@router.get("/versions/{version_id}")
-async def get_version(version_id: int) -> dict:
-    version = wiki_store.get_version(version_id)
-    if version is None:
-        raise HTTPException(404, "Unknown version.")
-    return version
+@router.get("/pages/{page_id}/commits/{sha}")
+async def get_page_commit(page_id: int, sha: str) -> dict:
+    if wiki_store.get_page(page_id) is None:
+        raise HTTPException(404, "Unknown page.")
+    content = wiki_store.commit_content(page_id, sha)
+    if content is None:
+        raise HTTPException(404, "Unknown commit.")
+    return {"sha": sha, "content": content}
 
 
-@router.post("/pages/{page_id}/restore/{version_id}",
+@router.post("/pages/{page_id}/restore/{sha}",
              dependencies=[Depends(require_owner)])
-async def restore_version(page_id: int, version_id: int) -> dict:
+async def restore_commit(page_id: int, sha: str) -> dict:
     if wiki_store.get_page(page_id) is None:
         raise HTTPException(404, "Unknown page.")
-    version = wiki_store.get_version(version_id)
-    if version is None or version["page_id"] != page_id:
-        raise HTTPException(404, "Unknown version.")
-    wiki_store.update_page_content(
-        page_id, version["content"], author="owner",
-        note=f"restored v{version_id}",
-    )
+    try:
+        wiki_store.restore_commit(page_id, sha, author="owner")
+    except ValueError:
+        raise HTTPException(404, "Unknown commit.")
     sync.schedule_push()
     return _page_response(page_id)
 
