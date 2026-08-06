@@ -1,117 +1,123 @@
 import { useState, type ReactNode } from "react";
-import { Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "./nav";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
 
 const COLLAPSE_KEY = "knowledge-assistant:sidebar-collapsed";
 
-function SidebarNav({
+function AppSidebarTrigger() {
+  const { state, isMobile, openMobile } = useSidebar();
+  const label = isMobile
+    ? openMobile
+      ? "Close menu"
+      : "Open menu"
+    : state === "collapsed"
+      ? "Expand sidebar"
+      : "Collapse sidebar";
+  return <SidebarTrigger aria-label={label} />;
+}
+
+function AppSidebar({
   threads,
-  collapsed,
-  onToggleCollapse,
   active,
   onNavigate,
 }: {
   threads?: ReactNode;
-  collapsed: boolean;
-  onToggleCollapse: () => void;
   active: string;
   onNavigate: (id: string) => void;
 }) {
+  const { state, isMobile, setOpenMobile } = useSidebar();
+  const collapsed = state === "collapsed" && !isMobile;
+
   return (
-    <div className="flex h-full flex-col gap-1 p-3">
-      <div
-        className={cn(
-          "flex items-center gap-2 px-2 pt-1 pb-4",
-          collapsed && "justify-center px-0",
-        )}
-      >
-        {!collapsed && (
-          <>
-            <span className="text-sm font-bold tracking-tight">
-              Knowledge Assistant
-            </span>
-            <span className="font-mono text-[10px] text-sidebar-foreground/50">
-              v0
-            </span>
-          </>
-        )}
-        <button
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={onToggleCollapse}
-          className={cn(
-            "rounded-md p-1 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground max-md:hidden",
-            !collapsed && "ml-auto",
-          )}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="size-4" />
-          ) : (
-            <PanelLeftClose className="size-4" />
-          )}
-        </button>
-      </div>
-      <nav
-        aria-label="Sections"
-        data-collapsed={collapsed}
-        className="flex flex-col gap-0.5"
-      >
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          return item.planned ? (
-            <span
-              key={item.id}
-              aria-disabled="true"
-              title={collapsed ? `${item.label} (planned)` : undefined}
-              className={cn(
-                "flex cursor-not-allowed items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-sidebar-foreground/40",
-                collapsed && "justify-center px-0",
-              )}
-            >
-              <Icon className="size-4 shrink-0" aria-hidden />
-              {!collapsed && (
-                <>
-                  {item.label}
-                  <em className="ml-auto rounded border border-sidebar-border px-1.5 py-px font-mono text-[9px] tracking-wide uppercase not-italic">
-                    planned
-                  </em>
-                </>
-              )}
-            </span>
-          ) : (
-            <button
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-              aria-current={item.id === active ? "page" : undefined}
-              title={collapsed ? item.label : undefined}
-              className={cn(
-                "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm",
-                item.id === active
-                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground shadow-[inset_2px_0_0] shadow-sidebar-primary"
-                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                collapsed && "justify-center px-0",
-              )}
-            >
-              <Icon className="size-4 shrink-0" aria-hidden />
-              {!collapsed && item.label}
-            </button>
-          );
-        })}
-      </nav>
-      {threads && !collapsed ? (
-        <div className="mt-4 flex min-h-0 flex-1 flex-col gap-2 border-t border-sidebar-border pt-3">
-          <span className="px-2 font-mono text-[10px] tracking-widest text-sidebar-foreground/50 uppercase">
-            Recent chats
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <div className="flex items-center gap-2 px-1 pt-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          <span className="text-sm font-bold tracking-tight group-data-[collapsible=icon]:hidden">
+            Knowledge Assistant
           </span>
-          <div className="min-h-0 flex-1 overflow-y-auto">{threads}</div>
+          <span className="font-mono text-[10px] text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden">
+            v0
+          </span>
         </div>
-      ) : null}
-      {!collapsed && (
-        <div className="mt-auto border-t border-sidebar-border px-2 pt-3 text-[11px] text-sidebar-foreground/50">
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <nav aria-label="Sections" data-collapsed={collapsed}>
+              <SidebarMenu>
+                {NAV_ITEMS.map((item) => {
+                  const Icon = item.icon;
+                  if (item.planned) {
+                    return (
+                      <SidebarMenuItem key={item.id}>
+                        <SidebarMenuButton
+                          disabled
+                          tooltip={`${item.label} (planned)`}
+                        >
+                          <Icon className="size-[18px]" aria-hidden />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                        <SidebarMenuBadge className="rounded border border-sidebar-border bg-transparent px-1.5 font-mono text-[9px] tracking-wide text-sidebar-foreground/40 uppercase group-data-[collapsible=icon]:hidden">
+                          planned
+                        </SidebarMenuBadge>
+                      </SidebarMenuItem>
+                    );
+                  }
+                  return (
+                    <SidebarMenuItem key={item.id}>
+                      <SidebarMenuButton
+                        isActive={item.id === active}
+                        aria-current={item.id === active ? "page" : undefined}
+                        tooltip={item.label}
+                        onClick={() => {
+                          onNavigate(item.id);
+                          setOpenMobile(false);
+                        }}
+                      >
+                        <Icon className="size-[18px]" aria-hidden />
+                        <span>{item.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </nav>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        {threads ? (
+          <SidebarGroup className="min-h-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <SidebarGroupLabel>Recent chats</SidebarGroupLabel>
+            <SidebarGroupContent className="min-h-0 flex-1 overflow-y-auto">
+              {threads}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
+      </SidebarContent>
+      <SidebarFooter className="group-data-[collapsible=icon]:hidden">
+        <div className="px-2 text-[11px] text-sidebar-foreground/50">
           grounded chat · $0 stack
         </div>
-      )}
-    </div>
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
   );
 }
 
@@ -130,54 +136,23 @@ export function AppShell({
   active: string;
   onNavigate: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === "true",
   );
-  const toggleCollapse = () => {
-    setCollapsed((v) => {
-      localStorage.setItem(COLLAPSE_KEY, String(!v));
-      return !v;
-    });
-  };
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
-      <aside
-        className={cn(
-          "shrink-0 bg-sidebar text-sidebar-foreground",
-          collapsed ? "w-14" : "w-60",
-          "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:w-60 max-md:transition-transform max-md:duration-200 motion-reduce:max-md:transition-none",
-          open ? "max-md:translate-x-0" : "max-md:-translate-x-full",
-        )}
-      >
-        <SidebarNav
-          threads={threads}
-          collapsed={collapsed}
-          onToggleCollapse={toggleCollapse}
-          active={active}
-          onNavigate={(id) => {
-            onNavigate(id);
-            setOpen(false);
-          }}
-        />
-      </aside>
-      {open && (
-        <button
-          aria-label="Close menu"
-          className="fixed inset-0 z-20 bg-black/45 md:hidden"
-          onClick={() => setOpen(false)}
-        />
-      )}
-      <div className="flex min-w-0 flex-1 flex-col">
+    <SidebarProvider
+      open={!collapsed}
+      onOpenChange={(open) => {
+        setCollapsed(!open);
+        localStorage.setItem(COLLAPSE_KEY, String(!open));
+      }}
+      className={cn("h-dvh overflow-hidden bg-background text-foreground")}
+    >
+      <AppSidebar threads={threads} active={active} onNavigate={onNavigate} />
+      <SidebarInset className="min-w-0">
         <header className="flex items-center gap-3 border-b border-border bg-card px-4 py-2.5">
-          <button
-            aria-label={open ? "Close menu" : "Open menu"}
-            className="rounded-md p-1.5 hover:bg-accent md:hidden"
-            onClick={() => setOpen((v) => !v)}
-          >
-            {open ? <X className="size-4" /> : <Menu className="size-4" />}
-          </button>
+          <AppSidebarTrigger />
           <span className="text-sm font-semibold">{title}</span>
           {topbar ?? (
             <span className="ml-auto rounded-full border border-border px-2.5 py-0.5 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
@@ -185,8 +160,8 @@ export function AppShell({
             </span>
           )}
         </header>
-        <main className="min-h-0 flex-1">{children}</main>
-      </div>
-    </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
