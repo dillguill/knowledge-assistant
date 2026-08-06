@@ -29,6 +29,21 @@ test("a wiki link to a missing page renders as a muted, non-navigable span", () 
   expect(span).toHaveAttribute("title", "No page with this name yet");
 });
 
+test("headings get rehype-slug ids and a hover-reveal deep-link anchor", () => {
+  render(<WikiMarkdown content={"# Getting Started\n"} resolve={resolve} />);
+  const heading = screen.getByRole("heading", { name: /getting started/i });
+  expect(heading).toHaveAttribute("id", "getting-started");
+  const anchor = screen.getByRole("link", { name: "Link to this heading" });
+  expect(anchor).toHaveAttribute("href", "#getting-started");
+});
+
+test("duplicate headings get rehype-slug's disambiguating id suffix", () => {
+  render(<WikiMarkdown content={"# Setup\n\n## Setup\n"} resolve={resolve} />);
+  const [h1, h2] = screen.getAllByRole("heading", { name: "Setup" });
+  expect(h1).toHaveAttribute("id", "setup");
+  expect(h2).toHaveAttribute("id", "setup-1");
+});
+
 test("inline math renders katex output", () => {
   render(<WikiMarkdown content="Energy: $x^2$" resolve={resolve} />);
   expect(document.querySelector(".katex")).toBeInTheDocument();

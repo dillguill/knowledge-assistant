@@ -15,6 +15,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import remarkWikiLink from "remark-wiki-link";
 import rehypeKatex from "rehype-katex";
+import rehypeSlug from "rehype-slug";
 
 import {
   markdownInlineCodeClassName,
@@ -133,6 +134,76 @@ function WikiAwareLink({
   );
 }
 
+/** A hover-reveal "#" link next to a heading, deep-linking to `#id` — reuses
+ * the same `rehype-slug` id the table-of-contents panel scrolls to. Wiki-only
+ * (chat headings aren't slugged/deep-linkable), so this lives here rather
+ * than in the shared `proseMarkdownComponents`. Rendered as a sibling of the
+ * heading (not a child) so its own "Link to this heading" label doesn't get
+ * folded into the heading's accessible name. */
+function HeadingAnchor({ id }: { id?: string }) {
+  if (!id) return null;
+  return (
+    <a
+      href={`#${id}`}
+      aria-label="Link to this heading"
+      className="no-underline text-muted-foreground opacity-0 group-hover:opacity-100"
+    >
+      #
+    </a>
+  );
+}
+
+const wikiHeadingComponents = {
+  h1: ({ id, className, children, ...props }: ComponentPropsWithoutRef<"h1">) => (
+    <div className="group mt-5 mb-2 flex items-baseline gap-2 first:mt-0 last:mb-0">
+      <h1 id={id} className={cn("aui-md-h1 scroll-m-20 text-xl font-semibold", className)} {...props}>
+        {children}
+      </h1>
+      <HeadingAnchor id={id} />
+    </div>
+  ),
+  h2: ({ id, className, children, ...props }: ComponentPropsWithoutRef<"h2">) => (
+    <div className="group mt-5 mb-2 flex items-baseline gap-2 first:mt-0 last:mb-0">
+      <h2 id={id} className={cn("aui-md-h2 scroll-m-20 text-lg font-semibold", className)} {...props}>
+        {children}
+      </h2>
+      <HeadingAnchor id={id} />
+    </div>
+  ),
+  h3: ({ id, className, children, ...props }: ComponentPropsWithoutRef<"h3">) => (
+    <div className="group mt-4 mb-1.5 flex items-baseline gap-2 first:mt-0 last:mb-0">
+      <h3 id={id} className={cn("aui-md-h3 scroll-m-20 text-base font-semibold", className)} {...props}>
+        {children}
+      </h3>
+      <HeadingAnchor id={id} />
+    </div>
+  ),
+  h4: ({ id, className, children, ...props }: ComponentPropsWithoutRef<"h4">) => (
+    <div className="group mt-3.5 mb-1 flex items-baseline gap-2 first:mt-0 last:mb-0">
+      <h4 id={id} className={cn("aui-md-h4 scroll-m-20 text-base font-medium", className)} {...props}>
+        {children}
+      </h4>
+      <HeadingAnchor id={id} />
+    </div>
+  ),
+  h5: ({ id, className, children, ...props }: ComponentPropsWithoutRef<"h5">) => (
+    <div className="group mt-3 mb-1 flex items-baseline gap-2 first:mt-0 last:mb-0">
+      <h5 id={id} className={cn("aui-md-h5 scroll-m-20 text-sm font-semibold", className)} {...props}>
+        {children}
+      </h5>
+      <HeadingAnchor id={id} />
+    </div>
+  ),
+  h6: ({ id, className, children, ...props }: ComponentPropsWithoutRef<"h6">) => (
+    <div className="group mt-3 mb-1 flex items-baseline gap-2 first:mt-0 last:mb-0">
+      <h6 id={id} className={cn("aui-md-h6 scroll-m-20 text-sm font-medium", className)} {...props}>
+        {children}
+      </h6>
+      <HeadingAnchor id={id} />
+    </div>
+  ),
+};
+
 /**
  * Renders wiki page content: the same prose styling as chat (via
  * `proseMarkdownComponents`), plus `[[Wiki Links]]`, `$math$`, and mermaid
@@ -152,7 +223,7 @@ export function WikiMarkdown({
     () => [remarkGfm, remarkMath, [remarkWikiLink, remarkWikiLinkOptions]],
     [],
   );
-  const rehypePlugins: PluggableList = useMemo(() => [rehypeKatex], []);
+  const rehypePlugins: PluggableList = useMemo(() => [rehypeSlug, rehypeKatex], []);
 
   return (
     <div className="aui-md">
@@ -161,6 +232,7 @@ export function WikiMarkdown({
         rehypePlugins={rehypePlugins}
         components={{
           ...proseMarkdownComponents,
+          ...wikiHeadingComponents,
           a: (props) => <WikiAwareLink {...props} resolve={resolve} onNavigate={onNavigate} />,
           pre: MarkdownPre,
           code: MarkdownCode,
