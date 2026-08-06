@@ -257,7 +257,16 @@ def log_for_page(data_dir: str, slug: str) -> list[dict]:
         sha, _, rest = header.partition("\x1f")
         author_name, _, rest = rest.partition("\x1f")
         iso_date, _, subject = rest.partition("\x1f")
-        changed_paths = [line for line in filename_block.splitlines() if line.strip()]
+        # Page files only ever live under wiki/ (see commit_page) — a real
+        # production repo's history also includes pre-existing whole-tree-
+        # sync commits touching binary files (a sqlite db, PDFs) outside
+        # wiki/ entirely, from before the wiki-git migration. `git show`ing
+        # one of those and decoding it as UTF-8 text crashes outright, so
+        # non-wiki paths must never be attempted in the first place.
+        changed_paths = [
+            line for line in filename_block.splitlines()
+            if line.strip() and line.startswith("wiki/")
+        ]
 
         matched_path = None
         for path in changed_paths:
