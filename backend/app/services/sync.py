@@ -57,6 +57,18 @@ def pull() -> None:
         return
     s = get_settings()
     try:
+        # data-sync is a branch this app itself introduces — never
+        # auto-created by upload_folder/snapshot_download (per HF Hub docs),
+        # so it won't exist yet on a repo's first-ever boot under this code.
+        # Ensure it exists (idempotent, mirrors the push path) *before*
+        # downloading from it: skipping straight to snapshot_download and
+        # swallowing the resulting 404 caused a real production incident —
+        # the app booted with an empty database instead of the real synced
+        # content, since the failure looked identical to "first boot ever".
+        _create_branch(
+            repo_id=s.hf_dataset_repo, repo_type="dataset",
+            branch=_DATA_SYNC_REVISION, token=s.hf_token, exist_ok=True,
+        )
         _snapshot_download(
             repo_id=s.hf_dataset_repo,
             repo_type="dataset",
@@ -64,7 +76,7 @@ def pull() -> None:
             token=s.hf_token,
             revision=_DATA_SYNC_REVISION,
         )
-    except Exception as exc:  # first boot (empty repo/branch) or transient network
+    except Exception as exc:  # transient network, or a genuinely absent repo
         log.warning("dataset pull skipped: %s", exc)
 
 
