@@ -45,6 +45,7 @@ def test_pull_survives_missing_repo(monkeypatch):
     def boom(**kwargs):
         raise RuntimeError("404 repo not found")
 
+    monkeypatch.setattr(sync, "_create_branch", MagicMock())
     monkeypatch.setattr(sync, "_snapshot_download", boom)
     sync.pull()  # must not raise
 
@@ -59,10 +60,53 @@ def test_pull_uses_the_dedicated_data_sync_branch(monkeypatch):
     monkeypatch.setenv("HF_TOKEN", "t")
     monkeypatch.setenv("HF_DATASET_REPO", "u/r")
     get_settings.cache_clear()
+    monkeypatch.setattr(sync, "_create_branch", MagicMock())
     downloads = MagicMock()
     monkeypatch.setattr(sync, "_snapshot_download", downloads)
     sync.pull()
     assert downloads.call_args.kwargs["revision"] == sync._DATA_SYNC_REVISION
+
+
+def test_pull_ensures_the_data_sync_branch_exists_before_downloading(monkeypatch):
+    # data-sync is a branch this app itself introduces — upload_folder/
+    # snapshot_download never auto-create a branch, so on a repo's first-ever
+    # boot under this code, data-sync won't exist yet. A real production
+    # incident: pull() used to skip straight to snapshot_download, which
+    # 404'd, was silently swallowed, and the app booted with an empty
+    # database instead of the real synced content. pull() must ensure the
+    # branch exists first, exactly like the push path already does.
+    monkeypatch.setenv("HF_TOKEN", "t")
+    monkeypatch.setenv("HF_DATASET_REPO", "u/r")
+    get_settings.cache_clear()
+    calls = []
+    monkeypatch.setattr(
+        sync, "_create_branch", lambda **kw: calls.append(("create_branch", kw))
+    )
+    monkeypatch.setattr(
+        sync, "_snapshot_download", lambda **kw: calls.append(("snapshot_download", kw))
+    )
+    sync.pull()
+    assert [c[0] for c in calls] == ["create_branch", "snapshot_download"]
+    assert calls[0][1] == dict(
+        repo_id="u/r", repo_type="dataset", branch=sync._DATA_SYNC_REVISION,
+        token="t", exist_ok=True,
+    )
+    assert calls[1][1]["revision"] == sync._DATA_SYNC_REVISION
+
+
+def test_pull_survives_branch_creation_failure(monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "t")
+    monkeypatch.setenv("HF_DATASET_REPO", "u/r")
+    get_settings.cache_clear()
+
+    def boom(**kwargs):
+        raise RuntimeError("network down")
+
+    downloads = MagicMock()
+    monkeypatch.setattr(sync, "_create_branch", boom)
+    monkeypatch.setattr(sync, "_snapshot_download", downloads)
+    sync.pull()  # must not raise
+    downloads.assert_not_called()
 
 
 async def test_debounced_push_ensures_branch_and_excludes_local_wiki_git_clone(monkeypatch):
