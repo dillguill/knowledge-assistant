@@ -199,6 +199,31 @@ def test_commit_page_raises_git_commit_error_when_git_unavailable(data_dir, monk
 # --- delete_page_file ---
 
 
+def test_log_for_page_ignores_non_wiki_paths_including_binary_files(data_dir):
+    # Regression: a real production repo's history includes pre-existing
+    # whole-tree-sync commits touching binary files (a sqlite db, PDFs)
+    # outside wiki/ entirely, from before the wiki-git migration. log_for_page
+    # used to `git show` every changed path in every commit and decode it as
+    # UTF-8 text — crashing with an uncaught UnicodeDecodeError on the first
+    # binary blob it hit, 500ing the history endpoint for every page. Page
+    # files only ever live under wiki/, so non-wiki paths must be skipped
+    # outright rather than attempted at all.
+    repo = wiki_git.ensure_repo(data_dir)
+    (repo / "knowledge.db").write_bytes(b"\xff\xfe\x00\x01binary-not-utf8\x80\x81")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Upload folder using huggingface_hub"],
+        cwd=repo, check=True,
+    )
+    sha, _ = wiki_git.commit_page(
+        data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
+        content="v1", created_at="t1", updated_at="t1", author="owner", note="created",
+    )
+    entries = wiki_git.log_for_page(data_dir, "oil-change")  # must not raise
+    assert len(entries) == 1
+    assert entries[0]["sha"] == sha
+
+
 def test_log_for_page_returns_newest_first_with_trailers(data_dir):
     wiki_git.commit_page(
         data_dir=data_dir, folder_path_parts=[], slug="oil-change", title="Oil Change",
