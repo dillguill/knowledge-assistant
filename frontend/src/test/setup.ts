@@ -8,6 +8,13 @@ globalThis.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 };
+// The wiki table of contents' scroll-spy hook (useScrollSpy) uses this;
+// tests that need to control it swap in their own mock via vi.stubGlobal.
+globalThis.IntersectionObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof IntersectionObserver;
 if (typeof globalThis.localStorage === "undefined" || !globalThis.localStorage) {
   const store = new Map<string, string>();
   Object.defineProperty(globalThis, "localStorage", {

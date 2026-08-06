@@ -16,6 +16,7 @@ import {
   type PageOrFolderTarget,
 } from "./wiki-dialogs";
 import { WikiTreePanel } from "./wiki-tree-panel";
+import { FolderOutline } from "./folder-outline";
 
 type WikiRoute =
   | { kind: "folder"; id: number | null }
@@ -292,40 +293,49 @@ export function WikiPage({
             {treeError}
           </p>
         ) : (
-          <>
-            <div className="mx-auto mb-4 flex max-w-3xl items-center justify-end gap-2">
-              <span className="text-xs text-muted-foreground">AI edit suggestions</span>
-              <div className="relative">
-                <WikiIconButton
-                  action="proposals"
-                  onClick={() => setRoute({ kind: "proposals" })}
-                />
-                {pendingCount !== null && pendingCount > 0 && (
-                  <span className="pointer-events-none absolute -end-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
-                    {pendingCount}
-                  </span>
-                )}
+          <div className="mx-auto flex max-w-5xl gap-8">
+            <div role="region" aria-label="Folder browser" className="min-w-0 max-w-3xl flex-1">
+              <div className="mb-4 flex items-center justify-end gap-2">
+                <span className="text-xs text-muted-foreground">AI edit suggestions</span>
+                <div className="relative">
+                  <WikiIconButton
+                    action="proposals"
+                    onClick={() => setRoute({ kind: "proposals" })}
+                  />
+                  {pendingCount !== null && pendingCount > 0 && (
+                    <span className="pointer-events-none absolute -end-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                      {pendingCount}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-            {isOwner && (
-              <FolderToolbar
-                folderId={route.id}
-                node={node}
+              {isOwner && (
+                <FolderToolbar
+                  folderId={route.id}
+                  node={node}
+                  tree={tree}
+                  onChanged={refreshTree}
+                  onCreatedPage={(slug) => setRoute({ kind: "page", slug, edit: true })}
+                  onDeletedFolder={(parentId) => onNavigateFolder(parentId)}
+                />
+              )}
+              <FolderView
                 tree={tree}
-                onChanged={refreshTree}
-                onCreatedPage={(slug) => setRoute({ kind: "page", slug, edit: true })}
-                onDeletedFolder={(parentId) => onNavigateFolder(parentId)}
+                folderId={route.id}
+                isOwner={isOwner}
+                onNavigateFolder={onNavigateFolder}
+                onNavigatePage={onNavigatePage}
+                onItemAction={handleItemAction}
               />
-            )}
-            <FolderView
+            </div>
+            <FolderOutline
               tree={tree}
               folderId={route.id}
-              isOwner={isOwner}
               onNavigateFolder={onNavigateFolder}
               onNavigatePage={onNavigatePage}
-              onItemAction={handleItemAction}
+              className="no-print hidden w-48 shrink-0 xl:block"
             />
-          </>
+          </div>
         )}
 
         {rowTarget && rowDialog === "rename" && (

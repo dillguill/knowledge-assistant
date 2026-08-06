@@ -153,6 +153,23 @@ test("Cancel discards the draft and returns to the rendered view", async () => {
   expect(await screen.findByRole("button", { name: /^edit$/i })).toBeInTheDocument();
 });
 
+test("the table of contents lists the page's headings and scrolls to them on click", async () => {
+  vi.spyOn(api, "getPageBySlug").mockResolvedValue(
+    makePage({ content: "# Hello\n\n## Section One\n" }),
+  );
+  const user = userEvent.setup();
+  renderPage();
+
+  const toc = await screen.findByRole("navigation", { name: "Table of contents" });
+  expect(toc).toHaveTextContent("Hello");
+  expect(toc).toHaveTextContent("Section One");
+
+  const heading = await screen.findByRole("heading", { name: "Section One" });
+  const scrollIntoView = vi.spyOn(heading, "scrollIntoView");
+  await user.click(screen.getByRole("link", { name: "Section One" }));
+  expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth" });
+});
+
 test("renaming a page saves the new title and refreshes", async () => {
   setOwner();
   vi.spyOn(api, "getPageBySlug")
