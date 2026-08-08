@@ -152,3 +152,69 @@ def test_startup_pulls_real_wiki_git_history_before_reconcile(tmp_path, monkeypa
     assert real_sha in shas
 
     get_settings.cache_clear()
+
+
+def test_startup_migrates_a_database_restored_by_pull(tmp_path, monkeypatch):
+    """The v0.5.0 provenance migration must run against the database sync.pull()
+    brings down, not against the empty one a fresh container starts with.
+
+    Same bug class as test_startup_survives_pull_overwrite: init_* running
+    before pull() means the restored file is never touched by migrations. Here
+    the symptom is narrower and only appears in production — every read works,
+    and only archiving a web result fails, with "no such column: source_url".
+    """
+    # A pre-v0.5.0 database: no provenance columns, and the narrow origin CHECK.
+    old_dir = tmp_path / "old"
+    old_dir.mkdir()
+    old_db = old_dir / "knowledge.db"
+    with sqlite3.connect(old_db) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE collections (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE documents (
+                id INTEGER PRIMARY KEY,
+                collection_id INTEGER REFERENCES collections(id),
+                filename TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                origin TEXT NOT NULL
+                    CHECK (origin IN ('upload', 'corpus', 'attachment')),
+                size_bytes INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE document_texts (
+                document_id INTEGER PRIMARY KEY REFERENCES documents(id),
+                extracted_text TEXT NOT NULL
+            );
+            CREATE VIRTUAL TABLE document_texts_fts USING fts5(
+                extracted_text, content='document_texts', content_rowid='document_id'
+            );
+            INSERT INTO collections (id, name) VALUES (1, 'Garage');
+            INSERT INTO documents
+                (id, collection_id, filename, content_type, origin, size_bytes)
+                VALUES (7, 1, 'manual.txt', 'text/plain', 'upload', 3);
+            INSERT INTO document_texts (document_id, extracted_text)
+                VALUES (7, 'torque is 22 Nm');
+            """
+        )
+
+    monkeypatch.setattr(sync, "pull", lambda: Path(old_db).replace(tmp_path / "knowledge.db"))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+
+    _startup()
+
+    with sqlite3.connect(tmp_path / "knowledge.db") as conn:
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(documents)")}
+    assert "source_url" in columns
+    assert "fetched_at" in columns
+
+    # The restored row survives the rebuild, and archiving now works.
+    assert store.get_texts([7])[0][1] == "torque is 22 Nm"
+    doc = store.upsert_web_document(1, "https://a.test/x", "Title", "body")
+    assert doc["origin"] == "web"
+
+    get_settings.cache_clear()

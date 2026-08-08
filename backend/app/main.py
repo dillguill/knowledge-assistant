@@ -23,8 +23,13 @@ def _startup() -> None:
     directly at module import.
     """
     settings = get_settings()
-    store.init_db(settings.data_dir)
+    # pull() must come FIRST: a fresh container starts with an empty disk, so
+    # anything init_db creates or migrates beforehand is simply overwritten by
+    # the restored dataset snapshot, and the restored file itself is then never
+    # migrated. init_wiki already sat on the correct side of this line; init_db
+    # did not, which left the v0.5.0 provenance migration a no-op in production.
     sync.pull()
+    store.init_db(settings.data_dir)
     wiki_store.init_wiki(settings.data_dir)
     # ensure_repo/pull_wiki_git must run before anything (seeding,
     # reconcile_git) trusts local wiki git state — a naive local-init-first
