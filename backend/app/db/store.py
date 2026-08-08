@@ -326,3 +326,23 @@ def upsert_web_document(collection_id: int, url: str, title: str, text: str) -> 
     doc = _doc_dict(row)
     get_document_path(doc).write_bytes(raw)
     return doc
+
+
+def find_cached_result(url: str) -> dict | None:
+    """Look up a single cached web result by URL, newest cache row first.
+    Backs archiving a result the browser never held the body for."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT results_json FROM web_search_cache ORDER BY fetched_at DESC"
+        ).fetchall()
+    for row in rows:
+        try:
+            results = json.loads(row["results_json"])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(results, list):
+            continue
+        for result in results:
+            if isinstance(result, dict) and result.get("url") == url:
+                return result
+    return None
