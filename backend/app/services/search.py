@@ -47,11 +47,13 @@ class WebResult:
 
     @classmethod
     def from_dict(cls, data: dict) -> "WebResult":
+        # Cache rows may have been written by an older shape of this class;
+        # a stale row must not raise inside the chat stream.
         return cls(
-            url=data["url"],
-            title=data["title"],
-            content=data["content"],
-            excerpt=data["excerpt"],
+            url=data.get("url", ""),
+            title=data.get("title", ""),
+            content=data.get("content", ""),
+            excerpt=data.get("excerpt", ""),
         )
 
 

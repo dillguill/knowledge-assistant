@@ -82,12 +82,15 @@ async def _post_completion(payload: dict) -> dict:
         "HTTP-Referer": "https://dillguill.github.io/knowledge-assistant/",
         "X-Title": "Knowledge Assistant",
     }
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
-        resp = await client.post(
-            f"{settings.openrouter_base_url}/chat/completions",
-            json=payload,
-            headers=headers,
-        )
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
+            resp = await client.post(
+                f"{settings.openrouter_base_url}/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+    except httpx.HTTPError as exc:
+        raise UpstreamError(f"transport error: {exc}") from exc
     if resp.status_code == 429:
         header = resp.headers.get("Retry-After", "")
         raise RateLimitedError(int(header) if header.isdigit() else None)
