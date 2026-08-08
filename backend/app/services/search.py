@@ -118,6 +118,9 @@ async def run_search(
 ) -> list[WebResult]:
     """Cache-aware search. The cache exists to protect a small monthly quota,
     not to store knowledge — hence the short TTL and the force_refresh escape."""
+    if not query.strip():
+        # Nothing to search for; never spend a provider credit on a blank query.
+        return []
     settings = get_settings()
     limit = max_results or settings.web_search_max_results
 

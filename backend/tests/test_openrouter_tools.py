@@ -1,5 +1,6 @@
 import json
 
+import httpx
 import pytest
 import respx
 
@@ -106,3 +107,23 @@ async def test_list_free_models_exposes_supported_parameters():
     by_id = {m["id"]: m for m in models}
     assert by_id["vendor/tool-model:free"]["supported_parameters"] == ["tools", "tool_choice"]
     assert by_id["vendor/plain-model:free"]["supported_parameters"] == []
+
+
+@respx.mock
+async def test_a_non_json_200_becomes_an_upstream_error():
+    from app.services import openrouter
+
+    respx.post(UPSTREAM).respond(status_code=200, content=b"<html>gateway</html>")
+    # A 200 carrying HTML must not escape as a raw JSON decode error, which
+    # would kill the chat stream instead of degrading it.
+    with pytest.raises(openrouter.UpstreamError):
+        await openrouter.complete(None, [{"role": "user", "content": "hi"}])
+
+
+@respx.mock
+async def test_a_transport_error_becomes_an_upstream_error():
+    from app.services import openrouter
+
+    respx.post(UPSTREAM).mock(side_effect=httpx.ConnectTimeout("timed out"))
+    with pytest.raises(openrouter.UpstreamError):
+        await openrouter.complete(None, [{"role": "user", "content": "hi"}])

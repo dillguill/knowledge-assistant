@@ -98,10 +98,11 @@ async def _post_completion(payload: dict) -> dict:
         raise ModelGoneError(payload["model"])
     if resp.status_code >= 400:
         raise UpstreamError(f"upstream status {resp.status_code}")
-    data = resp.json()
     try:
-        return data["choices"][0]["message"]
-    except (KeyError, IndexError, TypeError) as exc:
+        # A 200 carrying a non-JSON body is just as malformed as a missing key,
+        # and must not escape as a raw decode error mid-stream.
+        return resp.json()["choices"][0]["message"]
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise UpstreamError("malformed completion response") from exc
 
 

@@ -192,20 +192,25 @@ async def _sse(request: ChatRequest) -> AsyncIterator[str]:
                 )
 
     elif web_allowed and request.web_search == "on":
-        query = await search_query.derive_query(
-            _last_user_message(messages), request.model
-        )
-        try:
-            web_results = await search.run_search(query)
-            yield _event(
-                {
-                    "type": "search",
-                    "query": query,
-                    "results": [{"url": r.url, "title": r.title} for r in web_results],
-                }
-            )
-        except search.SearchError as exc:
-            search_error = _search_error_code(exc)
+        query = (
+            await search_query.derive_query(_last_user_message(messages), request.model)
+        ).strip()
+        # A blank derived query has nothing to search for; skip silently rather
+        # than reporting a failure that never happened.
+        if query:
+            try:
+                web_results = await search.run_search(query)
+                yield _event(
+                    {
+                        "type": "search",
+                        "query": query,
+                        "results": [
+                            {"url": r.url, "title": r.title} for r in web_results
+                        ],
+                    }
+                )
+            except search.SearchError as exc:
+                search_error = _search_error_code(exc)
 
     if search_error:
         yield _event(
