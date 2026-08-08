@@ -38,6 +38,8 @@ import { EditPagePicker } from "@/features/chat/edit-page-picker";
 import { WikiUpdateAwareText } from "@/features/chat/proposal-card";
 import { SourcePills } from "@/features/chat/source-pills";
 import { ComposerWebSearchSelect } from "@/features/chat/web-search-select";
+import { WebSearchNotice } from "@/features/chat/web-search-notice";
+import type { WebSearchInfo } from "@/features/chat/api-adapter";
 import { useSourceMentions } from "@/features/chat/use-source-mentions";
 import { cn } from "@/lib/utils";
 import {
@@ -532,6 +534,17 @@ const AssistantMessage: FC = () => {
       (s) => s.message.metadata?.custom?.citationSources as unknown[] | undefined,
     ) ?? []) as unknown[];
 
+  // What the backend actually searched for this message, and any notice about
+  // a search that failed (the turn still answers — see api-adapter.ts).
+  const webSearch =
+    useAuiState(
+      (s) => s.message.metadata?.custom?.webSearch as WebSearchInfo | undefined,
+    ) ?? null;
+  const searchNotice =
+    useAuiState(
+      (s) => s.message.metadata?.custom?.searchNotice as string | undefined,
+    ) ?? null;
+
   return (
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
@@ -542,6 +555,7 @@ const AssistantMessage: FC = () => {
         data-slot="aui_assistant-message-content"
         className="text-foreground px-2 leading-relaxed wrap-break-word"
       >
+        <WebSearchNotice webSearch={webSearch} notice={searchNotice} />
         <MessagePrimitive.GroupedParts
           groupBy={groupPartByType({
             reasoning: ["group-chainOfThought", "group-reasoning"],

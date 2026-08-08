@@ -83,3 +83,26 @@ export async function syncStatus(): Promise<string> {
 export function rawFileUrl(id: number): string {
   return `${base()}/api/knowledge/files/${id}/raw`;
 }
+
+export type WebArchiveResult = {
+  document: { id: number };
+  footnote: string;
+};
+
+/** Archives a web search result as a document. No page body is sent — the
+ * browser never holds it, so the backend recovers it from the search cache by
+ * URL, and a 404 means that cache entry has expired. */
+export async function archiveWebResult(body: {
+  url: string;
+  title: string;
+}): Promise<WebArchiveResult> {
+  const res = await fetch(`${base()}/api/knowledge/web-archive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...ownerHeaders() },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 404) {
+    throw new Error("That result is no longer cached — search again before saving.");
+  }
+  return (await check(res)).json();
+}
