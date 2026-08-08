@@ -18,8 +18,11 @@ CREATE TABLE IF NOT EXISTS documents (
     collection_id INTEGER REFERENCES collections(id),
     filename TEXT NOT NULL,
     content_type TEXT NOT NULL,
-    origin TEXT NOT NULL CHECK (origin IN ('upload', 'corpus', 'attachment')),
+    origin TEXT NOT NULL
+        CHECK (origin IN ('upload', 'corpus', 'attachment', 'web')),
     size_bytes INTEGER NOT NULL,
+    source_url TEXT,
+    fetched_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS document_texts (
@@ -54,10 +57,59 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Additive migrations for databases created before v0.5.0. The live Space
+    restores its SQLite file from the dataset repo, so `CREATE TABLE IF NOT
+    EXISTS` alone never reaches an existing deployment."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
+    if not columns:
+        return
+    if "source_url" not in columns:
+        conn.execute("ALTER TABLE documents ADD COLUMN source_url TEXT")
+    if "fetched_at" not in columns:
+        conn.execute("ALTER TABLE documents ADD COLUMN fetched_at TEXT")
+
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='documents'"
+    ).fetchone()
+    if row is None or "'web'" in row[0]:
+        return
+    # SQLite cannot ALTER a CHECK constraint, so widening `origin` to accept
+    # 'web' means rebuilding the table. Ids are carried over explicitly:
+    # document_texts and the FTS index both key on them.
+    conn.executescript(
+        """
+        PRAGMA foreign_keys = OFF;
+        CREATE TABLE documents_new (
+            id INTEGER PRIMARY KEY,
+            collection_id INTEGER REFERENCES collections(id),
+            filename TEXT NOT NULL,
+            content_type TEXT NOT NULL,
+            origin TEXT NOT NULL
+                CHECK (origin IN ('upload', 'corpus', 'attachment', 'web')),
+            size_bytes INTEGER NOT NULL,
+            source_url TEXT,
+            fetched_at TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO documents_new
+            (id, collection_id, filename, content_type, origin, size_bytes,
+             source_url, fetched_at, created_at)
+            SELECT id, collection_id, filename, content_type, origin,
+                   size_bytes, source_url, fetched_at, created_at
+            FROM documents;
+        DROP TABLE documents;
+        ALTER TABLE documents_new RENAME TO documents;
+        PRAGMA foreign_keys = ON;
+        """
+    )
+
+
 def init_db(data_dir: str) -> None:
     Path(data_dir).mkdir(parents=True, exist_ok=True)
     (Path(data_dir) / "uploads").mkdir(exist_ok=True)
     with sqlite3.connect(Path(data_dir) / "knowledge.db") as conn:
+        _migrate(conn)
         conn.executescript(_SCHEMA)
 
 
@@ -92,6 +144,9 @@ def _doc_dict(row: sqlite3.Row) -> dict:
         "content_type": row["content_type"],
         "origin": row["origin"],
         "size_bytes": row["size_bytes"],
+        # Rows selected before the migration ran won't carry these.
+        "source_url": row["source_url"] if "source_url" in row.keys() else None,
+        "fetched_at": row["fetched_at"] if "fetched_at" in row.keys() else None,
     }
 
 
@@ -194,3 +249,80 @@ def put_cached_search(query: str, max_results: int, results: list[dict]) -> None
                  fetched_at = excluded.fetched_at""",
             (normalize_query(query), max_results, json.dumps(results)),
         )
+
+
+def get_or_create_collection(name: str) -> dict:
+    """Idempotent collection lookup, so archiving a web page never depends on
+    the 'Web' collection having been seeded first."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM collections WHERE name = ?", (name,)
+        ).fetchone()
+        if row is not None:
+            count = conn.execute(
+                "SELECT COUNT(*) AS n FROM documents WHERE collection_id = ?",
+                (row["id"],),
+            ).fetchone()["n"]
+            return _collection_row(row, count)
+    return create_collection(name)
+
+
+def upsert_web_document(collection_id: int, url: str, title: str, text: str) -> dict:
+    """Archive a fetched web page as a document. The URL is the identity — a
+    re-save updates the existing row rather than duplicating it."""
+    raw = text.encode("utf-8")
+    with _connect() as conn:
+        existing = conn.execute(
+            "SELECT * FROM documents WHERE source_url = ?", (url,)
+        ).fetchone()
+        if existing is not None:
+            doc_id = existing["id"]
+            # FTS5 external-content rule: the index is removed by replaying the
+            # OLD text through the 'delete' command, and it must happen BEFORE
+            # the backing row changes. Reversed, the old terms stay in the
+            # index forever and stale documents keep matching.
+            old = conn.execute(
+                "SELECT extracted_text FROM document_texts WHERE document_id = ?",
+                (doc_id,),
+            ).fetchone()
+            if old is not None:
+                conn.execute(
+                    "INSERT INTO document_texts_fts (document_texts_fts, rowid,"
+                    " extracted_text) VALUES ('delete', ?, ?)",
+                    (doc_id, old["extracted_text"]),
+                )
+            conn.execute(
+                """UPDATE documents
+                   SET filename = ?, size_bytes = ?, fetched_at = datetime('now')
+                   WHERE id = ?""",
+                (title, len(raw), doc_id),
+            )
+            conn.execute(
+                "UPDATE document_texts SET extracted_text = ? WHERE document_id = ?",
+                (text, doc_id),
+            )
+            conn.execute(
+                "INSERT INTO document_texts_fts (rowid, extracted_text) VALUES (?, ?)",
+                (doc_id, text),
+            )
+        else:
+            cur = conn.execute(
+                """INSERT INTO documents
+                   (collection_id, filename, content_type, origin, size_bytes,
+                    source_url, fetched_at)
+                   VALUES (?, ?, 'text/markdown', 'web', ?, ?, datetime('now'))""",
+                (collection_id, title, len(raw), url),
+            )
+            doc_id = cur.lastrowid
+            conn.execute(
+                "INSERT INTO document_texts (document_id, extracted_text) VALUES (?, ?)",
+                (doc_id, text),
+            )
+            conn.execute(
+                "INSERT INTO document_texts_fts (rowid, extracted_text) VALUES (?, ?)",
+                (doc_id, text),
+            )
+        row = conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone()
+    doc = _doc_dict(row)
+    get_document_path(doc).write_bytes(raw)
+    return doc
