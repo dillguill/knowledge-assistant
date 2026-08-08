@@ -8,9 +8,43 @@ Page bodies are DATA, never instructions — they are stored verbatim and the
 grounding fence is applied at prompt-assembly time, like every other source.
 """
 
+import re
+from urllib.parse import urlparse
+
 from app.db import store
 
 WEB_COLLECTION_NAME = "Web"
+
+# Search engines fall back to the post body as the title for pages with no
+# usable <title> (Reddit, Facebook), and cut it off with an ellipsis.
+_TRUNCATED = ("...", "…")
+
+
+def resolve_title(search_title: str, content: str, url: str) -> str:
+    """A document named mid-sentence is a bad citation, so a truncated search
+    title is replaced: first by the page's own H1, then by the URL itself."""
+    title = " ".join(search_title.split())
+    if title and not title.endswith(_TRUNCATED):
+        return title
+
+    for line in content.split("\n"):
+        heading = re.match(r"^#\s+(.+)", line.strip())
+        if heading:
+            candidate = " ".join(heading.group(1).split())
+            if candidate:
+                return candidate
+
+    parsed = urlparse(url)
+    # Walk back past trailing numeric ids (post ids, comment ids), which name
+    # nothing — the readable slug sits just before them.
+    segments = [s for s in parsed.path.split("/") if s]
+    slug = ""
+    for segment in reversed(segments):
+        if not segment.isdigit():
+            slug = segment.replace("-", " ").replace("_", " ")
+            break
+    host = parsed.netloc or url
+    return f"{host}: {slug}".strip(": ") if slug else host
 
 
 def build_excerpt(content: str, fallback: str, limit: int = 300) -> str:
@@ -42,6 +76,7 @@ def build_footnote(
 
 def archive(url: str, title: str, content: str, excerpt: str = "") -> dict:
     collection = store.get_or_create_collection(WEB_COLLECTION_NAME)
+    title = resolve_title(title, content, url)
     document = store.upsert_web_document(collection["id"], url, title, content)
     fetched_at = (document["fetched_at"] or "")[:10]
     return {

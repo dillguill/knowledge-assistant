@@ -201,3 +201,58 @@ async def test_archived_page_body_is_never_executed_as_instructions():
     doc_id = resp.json()["document"]["id"]
     # Stored verbatim as data; the grounding fence is applied at prompt time.
     assert store.get_texts([doc_id])[0][1] == hostile
+
+
+def test_resolve_title_keeps_a_clean_search_title():
+    from app.services.web_archive import resolve_title
+
+    assert (
+        resolve_title("Day 0 Support for MiniMax-H3", "# Something Else", "https://a.test/x")
+        == "Day 0 Support for MiniMax-H3"
+    )
+
+
+def test_resolve_title_prefers_the_pages_own_heading_when_truncated():
+    from app.services.web_archive import resolve_title
+
+    # Search engines use the post body as the title for pages with no <title>,
+    # and truncate it — archiving that gives a document named mid-sentence.
+    content = "[Skip to main content](https://a.test/#)\n\n# Day 0 Support on AMD GPUs\n\nBody."
+    assert (
+        resolve_title("MiniMax has officially open-sourced this ...", content, "https://a.test/x")
+        == "Day 0 Support on AMD GPUs"
+    )
+
+
+def test_resolve_title_falls_back_to_the_url_when_there_is_no_heading():
+    from app.services.web_archive import resolve_title
+
+    title = resolve_title(
+        "AMA: MiniMax H3 Team — Ask us anything about our open …",
+        "Hi r/StableDiffusion! No heading here.",
+        "https://www.reddit.com/r/StableDiffusion/comments/1vh9rtw/ama_minimax_h3_team/",
+    )
+    # Never ends mid-sentence, and still identifies the page.
+    assert not title.endswith("...")
+    assert not title.endswith("…")
+    assert "reddit.com" in title
+
+
+def test_resolve_title_ignores_a_heading_that_is_itself_junk():
+    from app.services.web_archive import resolve_title
+
+    assert resolve_title("Truncated thing ...", "# \n\nbody", "https://a.test/some-page")
+
+
+def test_resolve_title_skips_trailing_numeric_ids_in_the_url():
+    from app.services.web_archive import resolve_title
+
+    # Social permalinks end in a post id that names nothing; the readable slug
+    # sits just before it.
+    title = resolve_title(
+        "MiniMax has officially open-sourced this ...",
+        "No heading.",
+        "https://www.facebook.com/nbdnews/posts/minimax-open-sourced-h3/1635981271865740/",
+    )
+    assert "minimax open sourced h3" in title
+    assert "1635981271865740" not in title
