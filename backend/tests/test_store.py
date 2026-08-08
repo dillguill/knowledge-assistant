@@ -42,3 +42,28 @@ def test_attachment_documents_have_no_collection():
 
 def test_init_db_is_idempotent(data_dir):
     store.init_db(str(data_dir))  # second call must not raise
+
+
+def test_normalize_query_lowercases_and_collapses_whitespace():
+    from app.db import store
+
+    assert store.normalize_query("  Best   PYTHON  linters ") == "best python linters"
+
+
+def test_cached_search_roundtrip(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.db import store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+
+    results = [{"url": "https://a.test", "title": "A", "content": "body", "excerpt": "ex"}]
+    store.put_cached_search("Rust Linters", 5, results)
+
+    # Normalized lookup hits the same row.
+    assert store.get_cached_search("  rust   linters ", 5, ttl_s=3600) == results
+    # A different max_results is a different cache key.
+    assert store.get_cached_search("rust linters", 3, ttl_s=3600) is None
+    # An expired entry is a miss.
+    assert store.get_cached_search("rust linters", 5, ttl_s=0) is None

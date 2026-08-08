@@ -1,5 +1,6 @@
 """SQLite-backed store for collections, documents, and extracted text."""
 
+import json
 import re
 import sqlite3
 from pathlib import Path
@@ -27,6 +28,13 @@ CREATE TABLE IF NOT EXISTS document_texts (
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS document_texts_fts USING fts5(
     extracted_text, content='document_texts', content_rowid='document_id'
+);
+CREATE TABLE IF NOT EXISTS web_search_cache (
+    query TEXT NOT NULL,
+    max_results INTEGER NOT NULL,
+    results_json TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (query, max_results)
 );
 """
 
@@ -157,3 +165,32 @@ def get_texts(doc_ids: list[int]) -> list[tuple[dict, str]]:
             if row:
                 out.append((_doc_dict(row), row["extracted_text"]))
     return out
+
+
+def normalize_query(query: str) -> str:
+    """Cache key normalization — case- and whitespace-insensitive."""
+    return " ".join(query.lower().split())
+
+
+def get_cached_search(query: str, max_results: int, ttl_s: int) -> list[dict] | None:
+    """Return cached results if present and younger than ttl_s, else None."""
+    with _connect() as conn:
+        row = conn.execute(
+            """SELECT results_json FROM web_search_cache
+               WHERE query = ? AND max_results = ?
+                 AND fetched_at > datetime('now', ?)""",
+            (normalize_query(query), max_results, f"-{int(ttl_s)} seconds"),
+        ).fetchone()
+    return json.loads(row["results_json"]) if row else None
+
+
+def put_cached_search(query: str, max_results: int, results: list[dict]) -> None:
+    with _connect() as conn:
+        conn.execute(
+            """INSERT INTO web_search_cache (query, max_results, results_json, fetched_at)
+               VALUES (?, ?, ?, datetime('now'))
+               ON CONFLICT(query, max_results) DO UPDATE SET
+                 results_json = excluded.results_json,
+                 fetched_at = excluded.fetched_at""",
+            (normalize_query(query), max_results, json.dumps(results)),
+        )
