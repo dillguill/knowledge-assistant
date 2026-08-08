@@ -71,7 +71,7 @@ Semver milestones, each independently demoable; tracked via GitHub Milestones an
 | v0.2.0 | Chat app baseline — threads, history, system prompt editor, settings, mobile | ✅ Shipped |
 | v0.3.0 | Knowledge bases — uploads, ingestion, collections, cited answers | ✅ Shipped |
 | v0.4.0 | Living docs — aggregation proposals, approval diffs, wiki UI | ✅ Shipped |
-| v0.4.5 | Wiki git + navigation — real git history, hierarchy sidebar, table of contents | Planned |
+| v0.4.5 | Wiki git + navigation — real git history, hierarchy sidebar, table of contents | ✅ Shipped |
 | v0.5.0 | Web search — free-tier search as a chat source | ✅ Shipped |
 | v0.6.0 | Skills — structured workflows | Planned |
 | v0.7.0 | RAG — hybrid retrieval behind a retriever interface | Planned |
