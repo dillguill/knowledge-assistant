@@ -9,7 +9,7 @@ Portfolio piece demonstrating AI/RAG engineering, full-stack product work, backe
 and evaluation — running on free-tier hosting.
 
 > **Live:** https://dillguill.github.io/knowledge-assistant/
-> **Status:** v0.4.0 shipped (Living Docs) — see Issues/Milestones for what's next.
+> **Status:** v0.5.0 shipped (Web Search) — see Issues/Milestones for what's next.
 
 ## Features
 
@@ -18,20 +18,20 @@ and evaluation — running on free-tier hosting.
 - **Knowledge sources, user-selected per conversation**:
   1. **Wiki** — the approved, aggregated living docs
   2. **Documents** — uploaded source collections queried directly
-  3. **Fresh input** — files attached in-chat (free-tier web search *planned*, v0.6.0)
+  3. **Fresh input** — files attached in-chat, plus free-tier web search (off / on / auto)
 - **Wiki (living docs)** — a folder-tree wiki of full-markdown pages with version history,
   diffs, and restore. Assistant-authored changes always flow through a proposal/approval
   loop (visitor-submittable, owner-approved, capped at 25 pending); the owner's own edits
   apply immediately as tracked versions. A wiki page can also be "targeted" in chat so the
   model proposes edits to it directly, and an owner-only drafter can generate a full page
   from selected documents in one call. Markdown and print-to-PDF export included.
-- **RAG** *(planned, v0.5.0)* — hybrid retrieval (SQLite FTS5 keyword + sqlite-vec vector,
+- **RAG** *(planned, v0.7.0)* — hybrid retrieval (SQLite FTS5 keyword + sqlite-vec vector,
   rank-fused, reranked) behind a swappable retriever interface, toggleable against today's
   full-context mode. Current retrieval is FTS5 keyword search (live for Wiki) plus
   budget-truncated full-context stuffing — no chunking or embeddings exist yet.
-- **Skills** *(planned, v0.8.0)* — structured research and comparison workflows invocable
+- **Skills** *(planned, v0.6.0)* — structured research and comparison workflows invocable
   from chat.
-- **Analytics** *(planned, v0.7.0)* — usage dashboard (tokens, requests, latency per model).
+- **Analytics** *(planned, v0.8.0)* — usage dashboard (tokens, requests, latency per model).
 
 ## Architecture
 
@@ -39,9 +39,9 @@ and evaluation — running on free-tier hosting.
 React SPA (GitHub Pages) ──HTTPS/SSE──► FastAPI (Hugging Face Space,
                                           wrapped in gradio.Server for free-tier hosting)
                                           ├─ SQLite: FTS5 keyword search (live)
-                                          ├─ SQLite: sqlite-vec + embeddings   (planned, v0.5.0)
+                                          ├─ SQLite: sqlite-vec + embeddings   (planned, v0.7.0)
                                           ├─► OpenRouter (LLM proxy; key = Space secret)
-                                          ├─► web search API                  (planned, v0.6.0)
+                                          ├─► Firecrawl search API            (live, owner-gated)
                                           └─► private HF Dataset repo (durable storage)
 ```
 
@@ -71,10 +71,11 @@ Semver milestones, each independently demoable; tracked via GitHub Milestones an
 | v0.2.0 | Chat app baseline — threads, history, system prompt editor, settings, mobile | ✅ Shipped |
 | v0.3.0 | Knowledge bases — uploads, ingestion, collections, cited answers | ✅ Shipped |
 | v0.4.0 | Living docs — aggregation proposals, approval diffs, wiki UI | ✅ Shipped |
-| v0.5.0 | RAG — hybrid retrieval behind a retriever interface | Planned |
-| v0.6.0 | Web search — free-tier search as a chat source | Planned |
-| v0.7.0 | Analytics + eval foundation | Planned |
-| v0.8.0 | Skills — structured workflows | Planned |
+| v0.4.5 | Wiki git + navigation — real git history, hierarchy sidebar, table of contents | Planned |
+| v0.5.0 | Web search — free-tier search as a chat source | ✅ Shipped |
+| v0.6.0 | Skills — structured workflows | Planned |
+| v0.7.0 | RAG — hybrid retrieval behind a retriever interface | Planned |
+| v0.8.0 | Analytics + autoretrieval-style eval loop | Planned |
 | v1.0.0 | Showcase release | Planned |
 
 ## Development
