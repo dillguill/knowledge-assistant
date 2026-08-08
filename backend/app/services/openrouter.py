@@ -105,6 +105,46 @@ async def complete(model: str | None, messages: list[dict[str, str]]) -> str:
         raise UpstreamError("malformed completion response") from exc
 
 
+async def complete_with_tools(
+    model: str | None,
+    messages: list[dict],
+    tools: list[dict],
+) -> dict:
+    """One non-streaming completion offering `tools`, returning the raw assistant
+    message dict. The caller inspects `tool_calls` to decide whether a tool ran."""
+    settings = get_settings()
+    payload = {
+        "model": model or settings.default_model,
+        "messages": messages,
+        "tools": tools,
+        "tool_choice": "auto",
+        "stream": False,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.openrouter_api_key}",
+        "HTTP-Referer": "https://dillguill.github.io/knowledge-assistant/",
+        "X-Title": "Knowledge Assistant",
+    }
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
+        resp = await client.post(
+            f"{settings.openrouter_base_url}/chat/completions",
+            json=payload,
+            headers=headers,
+        )
+    if resp.status_code == 429:
+        header = resp.headers.get("Retry-After", "")
+        raise RateLimitedError(int(header) if header.isdigit() else None)
+    if resp.status_code == 404:
+        raise ModelGoneError(payload["model"])
+    if resp.status_code >= 400:
+        raise UpstreamError(f"upstream status {resp.status_code}")
+    data = resp.json()
+    try:
+        return data["choices"][0]["message"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise UpstreamError("malformed completion response") from exc
+
+
 def clear_model_cache() -> None:
     global _model_cache
     _model_cache = None
@@ -129,6 +169,7 @@ async def list_free_models() -> list[dict[str, Any]]:
             "id": m["id"],
             "name": m.get("name", m["id"]),
             "context_length": m.get("context_length"),
+            "supported_parameters": m.get("supported_parameters") or [],
         }
         for m in resp.json().get("data", [])
         if m["id"].endswith(":free")
