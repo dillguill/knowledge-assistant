@@ -83,3 +83,64 @@ def test_wiki_only_input_produces_context():
 def test_unknown_wiki_id_is_skipped():
     block, sources = build_source_context([], [], [9999], 1000)
     assert (block, sources) == ("", [])
+
+
+def test_web_results_append_after_wiki_with_url_and_negative_ids():
+    from app.services.context_builder import build_source_context
+    from app.services.search import WebResult
+
+    block, sources = build_source_context(
+        [], [], [], budget=1000,
+        web_results=[
+            WebResult(url="https://a.test", title="A", content="body a", excerpt="ex a"),
+            WebResult(url="https://b.test", title="B", content="body b", excerpt="ex b"),
+        ],
+        web_budget=1000,
+    )
+
+    assert [s["label"] for s in sources] == ["S1", "S2"]
+    assert [s["kind"] for s in sources] == ["web", "web"]
+    assert sources[0]["url"] == "https://a.test"
+    assert sources[0]["filename"] == "A"
+    # Negative ids keep web sources out of the document id space.
+    assert sources[0]["id"] < 0 and sources[1]["id"] < 0
+    assert sources[0]["id"] != sources[1]["id"]
+    assert "body a" in block and "body b" in block
+
+
+def test_web_results_do_not_shrink_the_document_budget():
+    from app.services.context_builder import build_source_context
+    from app.services.search import WebResult
+
+    col = store.create_collection("Garage")
+    store.add_document(col["id"], "manual.pdf", "application/pdf",
+                       "upload", b"x", "torque is 22 Nm")
+
+    # With no web results, the document alone gets the full document budget.
+    block_no_web, sources_no_web = build_source_context([col["id"]], [], [], budget=2000)
+
+    block_with_web, sources_with_web = build_source_context(
+        [col["id"]], [], [], budget=2000,
+        web_results=[WebResult(url="https://a.test", title="A", content="w" * 5000, excerpt="")],
+        web_budget=600,
+    )
+
+    # The document's own chunk (label, filename, and full untruncated text) is
+    # identical whether or not web results are present.
+    doc_chunk_no_web = block_no_web.split("--- [S1] manual.pdf ---\n", 1)[1]
+    doc_chunk_with_web = block_with_web.split("--- [S1] manual.pdf ---\n", 1)[1]
+    assert doc_chunk_with_web.startswith(doc_chunk_no_web.split("\n\n", 1)[0])
+    assert sources_no_web == sources_with_web[:1]
+    assert "torque is 22 Nm" in block_with_web
+
+    # The web item is truncated to its own budget, not to a share of `budget`.
+    web_chunk = block_with_web.split("--- [S2] A ---\n", 1)[1]
+    assert web_chunk.count("w") <= 700
+    assert "[…truncated to fit the context budget]" in web_chunk
+
+
+def test_no_web_results_leaves_existing_behavior_unchanged():
+    from app.services.context_builder import build_source_context
+
+    block, sources = build_source_context([], [], [], budget=1000)
+    assert block == "" and sources == []
