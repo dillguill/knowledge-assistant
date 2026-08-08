@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     data_dir: str = "data"
     context_char_budget: int = 24000
     attachment_max_bytes: int = 20_000_000
+    firecrawl_api_key: str = ""
+    web_search_max_results: int = 5
+    web_search_cache_ttl_s: int = 3600
+    web_search_char_budget: int = 12000
 
     @property
     def origins(self) -> list[str]:

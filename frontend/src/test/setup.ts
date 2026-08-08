@@ -3,6 +3,11 @@ import "@testing-library/jest-dom/vitest";
 // jsdom lacks these; assistant-ui and Radix components touch them.
 window.HTMLElement.prototype.scrollIntoView ??= () => {};
 window.HTMLElement.prototype.scrollTo ??= () => {};
+// Radix's Select trigger won't open without pointer capture, which jsdom
+// doesn't implement at all.
+window.HTMLElement.prototype.hasPointerCapture ??= () => false;
+window.HTMLElement.prototype.setPointerCapture ??= () => {};
+window.HTMLElement.prototype.releasePointerCapture ??= () => {};
 globalThis.ResizeObserver ??= class {
   observe() {}
   unobserve() {}

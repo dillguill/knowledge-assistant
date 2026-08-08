@@ -54,3 +54,19 @@ async def test_unconfigured_owner_is_503(monkeypatch):
     async with client() as c:
         r = await c.post("/guarded", headers={"X-Owner-Token": "sekrit"})
     assert r.status_code == 503
+
+
+def test_owner_token_valid(monkeypatch):
+    from app.auth import owner_token_valid
+    from app.config import get_settings
+
+    monkeypatch.setenv("OWNER_TOKEN", "sekret")
+    get_settings.cache_clear()
+    assert owner_token_valid("sekret") is True
+    assert owner_token_valid("wrong") is False
+    assert owner_token_valid("") is False
+
+    monkeypatch.setenv("OWNER_TOKEN", "")
+    get_settings.cache_clear()
+    assert owner_token_valid("anything") is False
+    get_settings.cache_clear()

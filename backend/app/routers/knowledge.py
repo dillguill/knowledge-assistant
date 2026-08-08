@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.db import store
 from app.services import sync
 from app.services.ingestion import UnsupportedFileType, extract_text
+from app.services.web_archive import archive
 
 router = APIRouter(prefix="/api/knowledge")
 
@@ -54,6 +55,32 @@ async def upload_file(collection_id: int, file: UploadFile) -> dict:
                              "upload", raw, text)
     sync.schedule_push()
     return doc
+
+
+class WebArchiveCreate(BaseModel):
+    url: str = Field(min_length=1, max_length=2000)
+    title: str = Field(min_length=1, max_length=300)
+    # Optional: the browser never holds the fetched page markdown, so an
+    # omitted body is recovered from the server-side search cache by URL.
+    content: str = ""
+    excerpt: str = ""
+
+
+@router.post("/web-archive", status_code=201,
+             dependencies=[Depends(require_owner)])
+async def create_web_archive(body: WebArchiveCreate) -> dict:
+    content, excerpt = body.content, body.excerpt
+    if not content:
+        cached = store.find_cached_result(body.url)
+        if cached is None:
+            raise HTTPException(
+                404, "That result is no longer cached — search again before saving."
+            )
+        content = cached.get("content", "")
+        excerpt = excerpt or cached.get("excerpt", "")
+    result = archive(body.url, body.title, content, excerpt)
+    sync.schedule_push()
+    return result
 
 
 @router.get("/collections/{collection_id}/files")
