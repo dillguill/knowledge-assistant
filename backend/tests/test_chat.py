@@ -490,3 +490,196 @@ async def test_tools_enabled_no_fences_gives_no_action_events(tmp_path, monkeypa
     assert len(action_events) == 0
     assert events[-1] == "[DONE]"
     get_settings.cache_clear()
+
+
+import pytest
+
+from app.config import get_settings
+
+FIRECRAWL = "https://api.firecrawl.dev/v2/search"
+
+FIRECRAWL_OK = {
+    "success": True,
+    "data": {
+        "web": [
+            {
+                "url": "https://example.test/a",
+                "title": "Article A",
+                "description": "blurb",
+                "markdown": "Full body A.",
+            }
+        ]
+    },
+}
+
+
+@pytest.fixture
+def owner_env(tmp_path, monkeypatch):
+    from app.db import store
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OWNER_TOKEN", "sekret")
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-key")
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+    yield
+    get_settings.cache_clear()
+
+
+@respx.mock
+async def test_web_search_on_emits_search_event_and_web_source(owner_env):
+    respx.post(FIRECRAWL).respond(json=FIRECRAWL_OK)
+    respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post(
+            "/api/chat",
+            json={
+                "messages": [{"role": "user", "content": "What is sqlite-vec?"}],
+                "web_search": "on",
+                "owner_token": "sekret",
+            },
+        )
+    events = [json.loads(e) for e in parse_events(resp.text) if e != "[DONE]"]
+    search_events = [e for e in events if e["type"] == "search"]
+    source_events = [e for e in events if e["type"] == "sources"]
+
+    assert search_events[0]["query"] == "What is sqlite-vec?"
+    assert search_events[0]["results"] == [
+        {"url": "https://example.test/a", "title": "Article A"}
+    ]
+    assert source_events[0]["sources"][0]["kind"] == "web"
+    assert source_events[0]["sources"][0]["url"] == "https://example.test/a"
+    # The search event must arrive before any sources event.
+    assert events.index(search_events[0]) < events.index(source_events[0])
+
+
+@respx.mock
+async def test_web_search_without_owner_token_is_ignored(owner_env):
+    route = respx.post(FIRECRAWL).respond(json=FIRECRAWL_OK)
+    respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post(
+            "/api/chat",
+            json={
+                "messages": [{"role": "user", "content": "What is sqlite-vec?"}],
+                "web_search": "on",
+            },
+        )
+    events = [json.loads(e) for e in parse_events(resp.text) if e != "[DONE]"]
+    assert route.call_count == 0
+    assert not [e for e in events if e["type"] == "search"]
+    assert "Hello!" in "".join(
+        e["text"] for e in events if e["type"] == "text-delta"
+    )
+
+
+@respx.mock
+async def test_quota_exhaustion_degrades_to_an_answer_with_a_typed_error(owner_env):
+    respx.post(FIRECRAWL).respond(status_code=402, json={"error": "no credits"})
+    respx.post(UPSTREAM).respond(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        content=UPSTREAM_SSE,
+    )
+    async with client() as c:
+        resp = await c.post(
+            "/api/chat",
+            json={
+                "messages": [{"role": "user", "content": "What is sqlite-vec?"}],
+                "web_search": "on",
+                "owner_token": "sekret",
+            },
+        )
+    events = [json.loads(e) for e in parse_events(resp.text) if e != "[DONE]"]
+    errors = [e for e in events if e["type"] == "error"]
+    assert errors[0]["code"] == "search_quota_exhausted"
+    # The turn still answers — a search failure never kills the stream.
+    assert [e for e in events if e["type"] == "text-delta"]
+
+
+@respx.mock
+async def test_auto_mode_searches_only_when_the_model_calls_the_tool(owner_env):
+    search_route = respx.post(FIRECRAWL).respond(json=FIRECRAWL_OK)
+    respx.post(UPSTREAM).mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": "call_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "web_search",
+                                            "arguments": '{"query": "sqlite-vec"}',
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                },
+            ),
+            httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=UPSTREAM_SSE,
+            ),
+        ]
+    )
+    async with client() as c:
+        resp = await c.post(
+            "/api/chat",
+            json={
+                "messages": [{"role": "user", "content": "anything"}],
+                "web_search": "auto",
+                "owner_token": "sekret",
+            },
+        )
+    events = [json.loads(e) for e in parse_events(resp.text) if e != "[DONE]"]
+    assert search_route.call_count == 1
+    assert [e for e in events if e["type"] == "search"][0]["query"] == "sqlite-vec"
+
+
+@respx.mock
+async def test_auto_mode_streams_directly_when_no_tool_call(owner_env):
+    search_route = respx.post(FIRECRAWL).respond(json=FIRECRAWL_OK)
+    respx.post(UPSTREAM).mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "no need"}}]},
+            ),
+            httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=UPSTREAM_SSE,
+            ),
+        ]
+    )
+    async with client() as c:
+        resp = await c.post(
+            "/api/chat",
+            json={
+                "messages": [{"role": "user", "content": "hello"}],
+                "web_search": "auto",
+                "owner_token": "sekret",
+            },
+        )
+    events = [json.loads(e) for e in parse_events(resp.text) if e != "[DONE]"]
+    assert search_route.call_count == 0
+    assert not [e for e in events if e["type"] == "search"]
+    assert [e for e in events if e["type"] == "text-delta"]

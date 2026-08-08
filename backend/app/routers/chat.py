@@ -5,12 +5,47 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.auth import owner_token_valid
 from app.config import get_settings
-from app.services import actions, openrouter
+from app.services import actions, openrouter, search, search_query
 from app.services.context_builder import build_source_context
 from app.services.target_builder import build_target_context
 
 router = APIRouter()
+
+
+WEB_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": (
+            "Search the web for current or unverified information. Use only when "
+            "the answer depends on facts that may be recent, changing, or absent "
+            "from the provided sources."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "A short web search query.",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+_SEARCH_ERROR_CODES = {
+    search.SearchQuotaError: "search_quota_exhausted",
+    search.SearchUnavailableError: "search_unavailable",
+}
+
+_SEARCH_ERROR_MESSAGES = {
+    "search_quota_exhausted": "The web search quota is exhausted — answering without web results.",
+    "search_unavailable": "Web search is not available — answering without web results.",
+    "search_failed": "The web search failed — answering without web results.",
+}
 
 
 class ChatMessage(BaseModel):
@@ -27,17 +62,127 @@ class ChatRequest(BaseModel):
     target_page_id: int | None = None
     tools_enabled: bool = False
     owner_token: str = ""
+    web_search: Literal["off", "on", "auto"] = "off"
 
 
 def _event(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
+def _last_user_message(messages: list[dict]) -> str:
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            return message.get("content", "")
+    return ""
+
+
+def _search_error_code(exc: Exception) -> str:
+    # Specific subclasses before the shared parent — a quota 402 must not
+    # collapse into a generic failure message.
+    for exc_type, code in _SEARCH_ERROR_CODES.items():
+        if isinstance(exc, exc_type):
+            return code
+    return "search_failed"
+
+
 async def _sse(request: ChatRequest) -> AsyncIterator[str]:
     messages = [m.model_dump() for m in request.messages]
+    web_allowed = request.web_search != "off" and owner_token_valid(request.owner_token)
+    web_results: list[search.WebResult] = []
+    search_error: str | None = None
 
     if request.tools_enabled:
         messages.insert(0, {"role": "system", "content": actions.SYSTEM_PROMPT})
+
+    # `auto` asks the model whether to search at all; a tool call also supplies
+    # the query, so no derivation call is needed on this path. One search round
+    # per turn, deliberately — multi-search research belongs to the harness.
+    if web_allowed and request.web_search == "auto":
+        try:
+            message = await openrouter.complete_with_tools(
+                request.model, messages, [WEB_SEARCH_TOOL]
+            )
+        except openrouter.UpstreamError:
+            message = {}
+        tool_calls = message.get("tool_calls") or []
+        call = next(
+            (c for c in tool_calls if c.get("function", {}).get("name") == "web_search"),
+            None,
+        )
+        if call is None:
+            web_allowed = False
+        else:
+            try:
+                query = json.loads(call["function"].get("arguments") or "{}").get("query", "")
+            except json.JSONDecodeError:
+                query = ""
+            if not query:
+                web_allowed = False
+            else:
+                try:
+                    web_results = await search.run_search(query)
+                    yield _event(
+                        {
+                            "type": "search",
+                            "query": query,
+                            "results": [
+                                {"url": r.url, "title": r.title} for r in web_results
+                            ],
+                        }
+                    )
+                except search.SearchQuotaError as exc:
+                    search_error = _search_error_code(exc)
+                except search.SearchUnavailableError as exc:
+                    search_error = _search_error_code(exc)
+                except search.SearchError as exc:
+                    search_error = _search_error_code(exc)
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [call],
+                    }
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": (
+                            "\n".join(f"{r.title} — {r.url}" for r in web_results)
+                            if web_results
+                            else "No results; the search failed."
+                        ),
+                    }
+                )
+
+    elif web_allowed and request.web_search == "on":
+        query = await search_query.derive_query(
+            _last_user_message(messages), request.model
+        )
+        try:
+            web_results = await search.run_search(query)
+            yield _event(
+                {
+                    "type": "search",
+                    "query": query,
+                    "results": [{"url": r.url, "title": r.title} for r in web_results],
+                }
+            )
+        except search.SearchQuotaError as exc:
+            search_error = _search_error_code(exc)
+        except search.SearchUnavailableError as exc:
+            search_error = _search_error_code(exc)
+        except search.SearchError as exc:
+            search_error = _search_error_code(exc)
+
+    if search_error:
+        yield _event(
+            {
+                "type": "error",
+                "code": search_error,
+                "message": _SEARCH_ERROR_MESSAGES[search_error],
+            }
+        )
 
     target_inserted = False
     if request.target_page_id is not None:
@@ -57,12 +202,15 @@ async def _sse(request: ChatRequest) -> AsyncIterator[str]:
         messages.insert(0, {"role": "system", "content": target_block})
         target_inserted = True
 
-    if request.collection_ids or request.attachment_ids or request.wiki_page_ids:
+    if request.collection_ids or request.attachment_ids or request.wiki_page_ids or web_results:
+        settings = get_settings()
         block, sources = build_source_context(
             request.collection_ids,
             request.attachment_ids,
             request.wiki_page_ids,
-            get_settings().context_char_budget,
+            settings.context_char_budget,
+            web_results=web_results,
+            web_budget=settings.web_search_char_budget,
         )
         if sources:
             yield _event({"type": "sources", "sources": sources})
