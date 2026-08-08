@@ -2,6 +2,7 @@ import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
 import { loadSettings } from "../settings/settings-storage";
 import { consumeCreatePageMode } from "./create-page-mode";
 import { requestEditTarget } from "./target-selection";
+import { webSearchRef } from "./web-search-mode";
 
 // Self-contained page-drafting instruction injected when the "New page" pill is
 // active. It carries the full `wiki-create-page` fence format itself rather than
@@ -23,8 +24,14 @@ type Source = {
   id: number;
   label: string;
   filename: string;
-  kind?: "document" | "wiki";
+  kind?: "document" | "wiki" | "web";
   slug?: string;
+  url?: string;
+};
+
+export type WebSearchInfo = {
+  query: string;
+  results: { url: string; title: string }[];
 };
 
 export type ChatTarget = { page_id: number; title: string; slug: string };
@@ -32,6 +39,7 @@ export type ChatTarget = { page_id: number; title: string; slug: string };
 type SseEvent =
   | { type: "text-delta"; text: string }
   | { type: "sources"; sources: Source[] }
+  | { type: "search"; query: string; results: { url: string; title: string }[] }
   | { type: "target"; target: ChatTarget }
   | { type: "error"; code: string; message: string; retry_after?: number }
   | { type: "action"; action: string; result?: Record<string, unknown>; error?: string };
@@ -58,6 +66,12 @@ function errorCopy(
         : "Rate limited — wait a moment, then regenerate.";
     case "model_gone":
       return `${model ?? "The selected model"} is no longer available — pick another model and regenerate.`;
+    case "search_unavailable":
+      return "Web search is not available — answering without web results.";
+    case "search_quota_exhausted":
+      return "The web search quota is exhausted — answering without web results.";
+    case "search_failed":
+      return "The web search failed — answering without web results.";
     default:
       return "The model provider had a problem. Regenerate to retry.";
   }
@@ -162,6 +176,7 @@ export function createApiAdapter(
       if (attachmentIds.length) body.attachment_ids = attachmentIds;
       if (wikiPageIds.length) body.wiki_page_ids = wikiPageIds;
       if (targetPageId !== null) body.target_page_id = targetPageId;
+      if (webSearchRef.current !== "off") body.web_search = webSearchRef.current;
       const ownerToken = loadSettings().ownerToken;
       if (ownerToken) {
         body.tools_enabled = true;
@@ -178,13 +193,17 @@ export function createApiAdapter(
       }
       let text = "";
       let sources: Source[] = [];
+      let webSearch: WebSearchInfo | null = null;
+      let searchNotice: string | null = null;
       const sourceParts = () =>
         sources.map((s) => ({
           type: "source" as const,
           sourceType: "url" as const,
           id: String(s.id),
           url:
-            s.kind === "wiki" && s.slug
+            s.kind === "web" && s.url
+              ? s.url
+              : s.kind === "wiki" && s.slug
               ? `/wiki/page/${s.slug}`
               : `${baseUrl}/api/knowledge/files/${s.id}/raw`,
           title: `[${s.label}] ${s.filename}`,
@@ -193,11 +212,21 @@ export function createApiAdapter(
         }));
       for await (const event of parseSse(response.body)) {
         if (event.type === "error") {
+          // A search error is non-terminal: the backend keeps streaming an
+          // answer without web results, so throwing here would abort a turn
+          // that still succeeds.
+          if (event.code.startsWith("search_")) {
+            searchNotice = errorCopy(event, getModel());
+            continue;
+          }
           throw new ChatError(
             event.code,
             errorCopy(event, getModel()),
             event.retry_after,
           );
+        }
+        if (event.type === "search") {
+          webSearch = { query: event.query, results: event.results };
         }
         if (event.type === "target") {
           onTarget?.(event.target);
@@ -219,7 +248,9 @@ export function createApiAdapter(
             // Carried on the message so a `wiki-update` proposal card
             // (Task 16) can reuse this exact list as its citations, per the
             // "citations = the message's sources event payload" rule.
-            metadata: { custom: { citationSources: sources } },
+            metadata: {
+              custom: { citationSources: sources, webSearch, searchNotice },
+            },
           };
         }
       }

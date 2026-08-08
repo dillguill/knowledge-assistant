@@ -9,7 +9,11 @@ import { requestWikiPage } from "@/app/wiki-navigation";
  * have no raw-file URL; they route in-app to the page instead of leaving
  * the chat (there's no client-side router here, so "in-app" means routing
  * the click through the small `wiki-navigation` bridge rather than a real
- * `<a>` navigation). */
+ * `<a>` navigation).
+ *
+ * Web sources (`kind: "web"`) need no branch of their own: they carry a real
+ * `url` and fall through to the external-link path, which is exactly right —
+ * a citation should point at the live page, not the archived copy. */
 export function CitationChip({
   url,
   title,
@@ -18,7 +22,7 @@ export function CitationChip({
 }: {
   url?: string;
   title?: string;
-  kind?: "document" | "wiki";
+  kind?: "document" | "wiki" | "web";
   slug?: string;
 }) {
   if (kind === "wiki" && slug) {

@@ -34,3 +34,16 @@ test("a wiki source links internally to the page and does not open a new tab", a
   await user.click(link);
   expect(spy).toHaveBeenCalledWith("welcome");
 });
+
+it("renders a web citation as an external link to its url", () => {
+  render(
+    <CitationChip
+      kind="web"
+      url="https://example.test/article"
+      title="[S1] Article A"
+    />,
+  );
+  const link = screen.getByRole("link", { name: "[S1] Article A" });
+  expect(link).toHaveAttribute("href", "https://example.test/article");
+  expect(link).toHaveAttribute("target", "_blank");
+});

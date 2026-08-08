@@ -423,3 +423,115 @@ test("throws a readable error on an error event", async () => {
   }).rejects.toThrow(/rate limit/i);
   vi.unstubAllGlobals();
 });
+
+test("sends the web search mode and surfaces the search event", async () => {
+  const { setWebSearchMode } = await import("./web-search-mode");
+  setWebSearchMode("on");
+
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([
+      JSON.stringify({
+        type: "search",
+        query: "sqlite-vec",
+        results: [{ url: "https://a.test", title: "A" }],
+      }),
+      JSON.stringify({
+        type: "sources",
+        sources: [
+          {
+            id: -1,
+            label: "S1",
+            filename: "A",
+            kind: "web",
+            url: "https://a.test",
+          },
+        ],
+      }),
+      JSON.stringify({ type: "text-delta", text: "hi" }),
+      "[DONE]",
+    ]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const adapter = createApiAdapter("https://api.test", () => "m");
+  const chunks: {
+    content: readonly Record<string, unknown>[];
+    metadata: { custom: Record<string, unknown> };
+  }[] = [];
+  for await (const chunk of run(adapter) as AsyncIterable<never>) {
+    chunks.push(chunk);
+  }
+
+  const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+  expect(sent.web_search).toBe("on");
+
+  const last = chunks.at(-1)!;
+  expect(last.metadata.custom.webSearch).toEqual({
+    query: "sqlite-vec",
+    results: [{ url: "https://a.test", title: "A" }],
+  });
+  const sourcePart = last.content.find((p) => p.type === "source")!;
+  expect(sourcePart.url).toBe("https://a.test");
+  expect(sourcePart.kind).toBe("web");
+
+  setWebSearchMode("off");
+});
+
+test("omits web_search entirely when the mode is off", async () => {
+  const { setWebSearchMode } = await import("./web-search-mode");
+  setWebSearchMode("off");
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(
+      sseResponse([JSON.stringify({ type: "text-delta", text: "hi" }), "[DONE]"]),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  await drain(run(createApiAdapter("https://api.test", () => "m")));
+  const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+  expect("web_search" in sent).toBe(false);
+});
+
+test("a search error is a notice, not a thrown turn", async () => {
+  const { setWebSearchMode } = await import("./web-search-mode");
+  setWebSearchMode("on");
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([
+      JSON.stringify({
+        type: "error",
+        code: "search_quota_exhausted",
+        message: "x",
+      }),
+      JSON.stringify({ type: "text-delta", text: "answered anyway" }),
+      "[DONE]",
+    ]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const chunks: {
+    content: readonly { type: string; text?: string }[];
+    metadata: { custom: Record<string, unknown> };
+  }[] = [];
+  // The turn must complete: a failed search never aborts an answer.
+  for await (const chunk of run(
+    createApiAdapter("https://api.test", () => "m"),
+  ) as AsyncIterable<never>) {
+    chunks.push(chunk);
+  }
+  const last = chunks.at(-1)!;
+  expect(last.content[0]!.text).toBe("answered anyway");
+  expect(last.metadata.custom.searchNotice).toMatch(/quota/i);
+  setWebSearchMode("off");
+});
+
+test("a non-search error still throws", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    sseResponse([
+      JSON.stringify({ type: "error", code: "rate_limited", message: "x" }),
+      "[DONE]",
+    ]),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(
+    drain(run(createApiAdapter("https://api.test", () => "m"))),
+  ).rejects.toThrow(/Rate limited/);
+});
