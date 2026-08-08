@@ -535,3 +535,28 @@ test("a non-search error still throws", async () => {
     drain(run(createApiAdapter("https://api.test", () => "m"))),
   ).rejects.toThrow(/Rate limited/);
 });
+
+test("a search rate limit reads as transient, not as a spent quota", async () => {
+  const { setWebSearchMode } = await import("./web-search-mode");
+  setWebSearchMode("on");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      sseResponse([
+        JSON.stringify({ type: "error", code: "search_rate_limited", message: "x" }),
+        JSON.stringify({ type: "text-delta", text: "answered anyway" }),
+        "[DONE]",
+      ]),
+    ),
+  );
+  const chunks: { metadata: { custom: Record<string, unknown> } }[] = [];
+  for await (const chunk of run(
+    createApiAdapter("https://api.test", () => "m"),
+  ) as AsyncIterable<never>) {
+    chunks.push(chunk);
+  }
+  const notice = chunks.at(-1)!.metadata.custom.searchNotice as string;
+  expect(notice).toMatch(/wait a moment/i);
+  expect(notice).not.toMatch(/quota/i);
+  setWebSearchMode("off");
+});

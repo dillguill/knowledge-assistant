@@ -37,11 +37,13 @@ WEB_SEARCH_TOOL = {
 }
 
 _SEARCH_ERROR_CODES = {
+    search.SearchRateLimitedError: "search_rate_limited",
     search.SearchQuotaError: "search_quota_exhausted",
     search.SearchUnavailableError: "search_unavailable",
 }
 
 _SEARCH_ERROR_MESSAGES = {
+    "search_rate_limited": "Web search is rate limited — wait a moment, then retry.",
     "search_quota_exhausted": "The web search quota is exhausted — answering without web results.",
     "search_unavailable": "Web search is not available — answering without web results.",
     "search_failed": "The web search failed — answering without web results.",

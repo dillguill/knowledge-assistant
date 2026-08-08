@@ -68,6 +68,8 @@ function errorCopy(
       return `${model ?? "The selected model"} is no longer available — pick another model and regenerate.`;
     case "search_unavailable":
       return "Web search is not available — answering without web results.";
+    case "search_rate_limited":
+      return "Web search is rate limited — wait a moment, then retry.";
     case "search_quota_exhausted":
       return "The web search quota is exhausted — answering without web results.";
     case "search_failed":

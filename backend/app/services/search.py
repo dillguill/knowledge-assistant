@@ -27,7 +27,18 @@ class SearchUnavailableError(SearchError):
 
 
 class SearchQuotaError(SearchError):
-    """Provider quota or rate limit exhausted."""
+    """The monthly credit allowance is spent — nothing to do but wait for the
+    month to roll over, or upgrade."""
+
+
+class SearchRateLimitedError(SearchError):
+    """Too many requests too quickly. Transient, and deliberately NOT a
+    SearchQuotaError: telling someone their quota is gone when they merely
+    need to wait a minute is the wrong instruction entirely."""
+
+    def __init__(self, message: str, retry_after: int | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True)
@@ -82,8 +93,13 @@ class FirecrawlProvider:
         except httpx.HTTPError as exc:
             raise SearchError(f"search transport error: {exc}") from exc
 
-        if resp.status_code in (402, 429):
-            raise SearchQuotaError(f"search quota exhausted ({resp.status_code})")
+        if resp.status_code == 429:
+            header = resp.headers.get("Retry-After", "")
+            raise SearchRateLimitedError(
+                "search rate limited (429)", int(header) if header.isdigit() else None
+            )
+        if resp.status_code == 402:
+            raise SearchQuotaError("search quota exhausted (402)")
         if resp.status_code in (401, 403):
             raise SearchUnavailableError(f"search auth rejected ({resp.status_code})")
         if resp.status_code >= 400:

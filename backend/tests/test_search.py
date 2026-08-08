@@ -82,11 +82,11 @@ async def test_quota_error_raised_on_402():
 
 
 @respx.mock
-async def test_quota_error_raised_on_429():
-    from app.services.search import FirecrawlProvider, SearchQuotaError
+async def test_rate_limit_error_raised_on_429():
+    from app.services.search import FirecrawlProvider, SearchRateLimitedError
 
     respx.post(SEARCH_URL).respond(status_code=429, json={"error": "rate limited"})
-    with pytest.raises(SearchQuotaError):
+    with pytest.raises(SearchRateLimitedError):
         await FirecrawlProvider().search("q", 5)
 
 
@@ -148,3 +148,27 @@ async def test_run_search_without_key_raises_unavailable(monkeypatch):
     get_settings.cache_clear()
     with pytest.raises(search.SearchUnavailableError):
         await search.run_search("q", 2)
+
+
+@respx.mock
+async def test_429_is_a_rate_limit_not_an_exhausted_quota():
+    from app.services import search
+
+    respx.post(SEARCH_URL).respond(
+        status_code=429, headers={"Retry-After": "30"}, json={"error": "slow down"}
+    )
+    # A transient rate limit must not be reported as a spent monthly quota:
+    # one says "wait a minute", the other says "wait a month".
+    with pytest.raises(search.SearchRateLimitedError) as caught:
+        await search.run_search("anything")
+    assert not isinstance(caught.value, search.SearchQuotaError)
+    assert caught.value.retry_after == 30
+
+
+@respx.mock
+async def test_402_is_an_exhausted_quota():
+    from app.services import search
+
+    respx.post(SEARCH_URL).respond(status_code=402, json={"error": "out of credits"})
+    with pytest.raises(search.SearchQuotaError):
+        await search.run_search("anything")
