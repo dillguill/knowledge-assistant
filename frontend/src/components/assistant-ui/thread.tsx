@@ -37,6 +37,7 @@ import { useCreatePageMode } from "@/features/chat/create-page-mode";
 import { EditPagePicker } from "@/features/chat/edit-page-picker";
 import { WikiUpdateAwareText } from "@/features/chat/proposal-card";
 import { SourcePills } from "@/features/chat/source-pills";
+import { ComposerWebSearchSelect } from "@/features/chat/web-search-select";
 import { useSourceMentions } from "@/features/chat/use-source-mentions";
 import { cn } from "@/lib/utils";
 import {
@@ -432,6 +433,7 @@ const ComposerAction: FC<{ onInsertTrigger: (char: string) => void }> = ({
       <div className="flex items-center gap-2">
         <ComposerAddAttachment />
         <ComposerModelSelect />
+        <ComposerWebSearchSelect />
         <ComposerToolsMenu onInsertTrigger={onInsertTrigger} />
       </div>
       <div className="flex items-center gap-1.5">

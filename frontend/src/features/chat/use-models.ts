@@ -4,6 +4,8 @@ export type ApiModel = {
   id: string;
   name: string;
   context_length: number | null;
+  // Advertised by OpenRouter; "tools" gates web search's `auto` mode.
+  supported_parameters?: string[];
 };
 
 export function useModels(baseUrl: string | null) {
