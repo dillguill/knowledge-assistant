@@ -72,54 +72,11 @@ async def stream_chat(
                     yield delta
 
 
-async def complete(model: str | None, messages: list[dict[str, str]]) -> str:
-    """Run a single non-streaming OpenRouter chat completion, returning the text."""
+async def _post_completion(payload: dict) -> dict:
+    """POST a chat-completion payload to OpenRouter and return the raw assistant
+    message dict. Owns the headers, timeout, and the full status-code ladder shared
+    by `complete` and `complete_with_tools`."""
     settings = get_settings()
-    payload = {
-        "model": model or settings.default_model,
-        "messages": messages,
-        "stream": False,
-    }
-    headers = {
-        "Authorization": f"Bearer {settings.openrouter_api_key}",
-        "HTTP-Referer": "https://dillguill.github.io/knowledge-assistant/",
-        "X-Title": "Knowledge Assistant",
-    }
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
-        resp = await client.post(
-            f"{settings.openrouter_base_url}/chat/completions",
-            json=payload,
-            headers=headers,
-        )
-    if resp.status_code == 429:
-        header = resp.headers.get("Retry-After", "")
-        raise RateLimitedError(int(header) if header.isdigit() else None)
-    if resp.status_code == 404:
-        raise ModelGoneError(payload["model"])
-    if resp.status_code >= 400:
-        raise UpstreamError(f"upstream status {resp.status_code}")
-    data = resp.json()
-    try:
-        return data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise UpstreamError("malformed completion response") from exc
-
-
-async def complete_with_tools(
-    model: str | None,
-    messages: list[dict],
-    tools: list[dict],
-) -> dict:
-    """One non-streaming completion offering `tools`, returning the raw assistant
-    message dict. The caller inspects `tool_calls` to decide whether a tool ran."""
-    settings = get_settings()
-    payload = {
-        "model": model or settings.default_model,
-        "messages": messages,
-        "tools": tools,
-        "tool_choice": "auto",
-        "stream": False,
-    }
     headers = {
         "Authorization": f"Bearer {settings.openrouter_api_key}",
         "HTTP-Referer": "https://dillguill.github.io/knowledge-assistant/",
@@ -143,6 +100,39 @@ async def complete_with_tools(
         return data["choices"][0]["message"]
     except (KeyError, IndexError, TypeError) as exc:
         raise UpstreamError("malformed completion response") from exc
+
+
+async def complete(model: str | None, messages: list[dict[str, str]]) -> str:
+    """Run a single non-streaming OpenRouter chat completion, returning the text."""
+    settings = get_settings()
+    payload = {
+        "model": model or settings.default_model,
+        "messages": messages,
+        "stream": False,
+    }
+    message = await _post_completion(payload)
+    try:
+        return message["content"]
+    except (KeyError, TypeError) as exc:
+        raise UpstreamError("malformed completion response") from exc
+
+
+async def complete_with_tools(
+    model: str | None,
+    messages: list[dict],
+    tools: list[dict],
+) -> dict:
+    """One non-streaming completion offering `tools`, returning the raw assistant
+    message dict. The caller inspects `tool_calls` to decide whether a tool ran."""
+    settings = get_settings()
+    payload = {
+        "model": model or settings.default_model,
+        "messages": messages,
+        "tools": tools,
+        "tool_choice": "auto",
+        "stream": False,
+    }
+    return await _post_completion(payload)
 
 
 def clear_model_cache() -> None:
