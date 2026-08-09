@@ -9,7 +9,7 @@ import logging
 
 from pydantic import ValidationError
 
-from app.harness import events, runner, runs, tools
+from app.harness import builtin_tools, events, runner, runs, tools
 from app.services import sync
 
 log = logging.getLogger(__name__)
@@ -25,8 +25,8 @@ class InvalidInput(Exception):
 
 
 def build_registry() -> tools.ToolRegistry:
-    """The tools a run may call. PR 3 fills this in with the real builtins."""
-    return tools.ToolRegistry()
+    """The tools a run may call."""
+    return builtin_tools.default_registry()
 
 
 async def start(skill, inputs: dict, model: str | None, owner: bool) -> dict:
