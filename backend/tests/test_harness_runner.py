@@ -276,3 +276,60 @@ async def test_budget_and_retries_default_from_settings(monkeypatch):
     settings = get_settings()
     assert ctx.max_calls == settings.skill_max_model_calls
     assert ctx.retries == settings.skill_contract_retries
+
+
+async def test_pipeline_runs_steps_in_order_and_threads_state(monkeypatch):
+    from app.harness import runner
+
+    ctx, _ = _context(monkeypatch, [])
+    order = []
+
+    async def first(c):
+        async with c.step("first"):
+            order.append("first")
+            c.state["value"] = 1
+
+    async def second(c):
+        async with c.step("second"):
+            order.append("second")
+            c.state["value"] += 1
+
+    async def finish(c):
+        return {"value": c.state["value"]}
+
+    scheduler = runner.PipelineScheduler([first, second, finish])
+    assert scheduler.name == "pipeline"
+    assert await scheduler.run(ctx) == {"value": 2}
+    assert order == ["first", "second"]
+
+
+async def test_pipeline_stops_at_the_first_failing_step(monkeypatch):
+    # No mechanism to back up, and half a research brief presented as finished
+    # is worse than a visible failure.
+    from app.harness import runner
+
+    ctx, _ = _context(monkeypatch, [])
+    reached = []
+
+    async def boom(c):
+        async with c.step("boom"):
+            raise runner.StepFailure("contract_invalid", "bad shape")
+
+    async def never(c):
+        reached.append("never")
+
+    with pytest.raises(runner.StepFailure):
+        await runner.PipelineScheduler([boom, never]).run(ctx)
+    assert reached == []
+
+
+async def test_pipeline_returns_an_empty_output_when_no_step_returns_one(monkeypatch):
+    from app.harness import runner
+
+    ctx, _ = _context(monkeypatch, [])
+
+    async def nothing(c):
+        async with c.step("nothing"):
+            pass
+
+    assert await runner.PipelineScheduler([nothing]).run(ctx) == {}

@@ -228,3 +228,25 @@ class RunContext:
         # is returned, never raised. Restore the enclosing step for metrics.
         self._open = parent
         return result
+
+
+class PipelineScheduler:
+    """Walks a declared step list. The most deterministic scheduler available:
+    call count and order are knowable before the run starts.
+
+    v0.7.0's ceiling arm pins this scheduler — a ceiling that drifts run to run
+    makes the three-arm comparison unreadable.
+    """
+
+    name = "pipeline"
+
+    def __init__(self, steps: list) -> None:
+        self.steps = steps
+
+    async def run(self, ctx: RunContext) -> dict:
+        output: dict = {}
+        for step in self.steps:
+            result = await step(ctx)
+            if isinstance(result, dict):
+                output = result
+        return output
