@@ -333,3 +333,145 @@ async def test_pipeline_returns_an_empty_output_when_no_step_returns_one(monkeyp
             pass
 
     assert await runner.PipelineScheduler([nothing]).run(ctx) == {}
+
+
+def _tool_call(name, arguments="{}"):
+    return {"content": None, "tool_calls": [
+        {"id": "c1", "type": "function",
+         "function": {"name": name, "arguments": arguments}}
+    ]}
+
+
+def _register_finish(ctx):
+    from app.harness import tools
+
+    async def finish(answer: str = "") -> dict:
+        return tools.ok({"answer": answer})
+
+    async def look(topic: str = "") -> dict:
+        return tools.ok({"found": topic})
+
+    ctx.registry.register(tools.Tool(name="finish", description="", parameters={}, handler=finish))
+    ctx.registry.register(tools.Tool(name="look", description="", parameters={}, handler=look))
+
+
+async def test_agent_loops_until_the_terminal_tool(monkeypatch):
+    from app.harness import runner
+
+    ctx, _ = _context(monkeypatch, [
+        _tool_call("look", '{"topic": "x"}'),
+        _tool_call("finish", '{"answer": "done"}'),
+    ])
+    _register_finish(ctx)
+
+    output = await runner.AgentScheduler("sys", ["look", "finish"], "finish").run(ctx)
+    assert output == {"answer": "done"}
+    assert ctx.calls_used == 2
+
+
+async def test_agent_stops_at_its_iteration_cap(monkeypatch):
+    from app.harness import runner
+
+    ctx, _ = _context(monkeypatch, [_tool_call("look") for _ in range(10)], max_calls=20)
+    _register_finish(ctx)
+
+    with pytest.raises(runner.StepFailure) as excinfo:
+        await runner.AgentScheduler("sys", ["look", "finish"], "finish",
+                                    max_iterations=3).run(ctx)
+    assert excinfo.value.code == "iteration_cap"
+    assert ctx.calls_used == 3
+
+
+async def test_agent_treats_a_reply_with_no_tool_call_as_the_end(monkeypatch):
+    from app.harness import runner
+
+    ctx, _ = _context(monkeypatch, [{"content": "I'm just going to answer directly."}])
+    _register_finish(ctx)
+
+    output = await runner.AgentScheduler("sys", ["look", "finish"], "finish").run(ctx)
+    assert output == {"text": "I'm just going to answer directly."}
+
+
+async def test_agent_survives_a_malformed_tool_call(monkeypatch):
+    # Tool-call payloads are model output; every level may be the wrong shape.
+    from app.harness import runner
+
+    ctx, _ = _context(monkeypatch, [
+        {"content": None, "tool_calls": ["not a dict"]},
+        _tool_call("finish", '{"answer": "recovered"}'),
+    ])
+    _register_finish(ctx)
+
+    output = await runner.AgentScheduler("sys", ["look", "finish"], "finish").run(ctx)
+    assert output == {"answer": "recovered"}
+
+
+async def test_agent_survives_unparseable_tool_arguments(monkeypatch):
+    from app.harness import runner
+
+    ctx, _ = _context(monkeypatch, [
+        _tool_call("look", "{not json at all"),
+        _tool_call("finish", '{"answer": "ok"}'),
+    ])
+    _register_finish(ctx)
+
+    assert await runner.AgentScheduler(
+        "sys", ["look", "finish"], "finish"
+    ).run(ctx) == {"answer": "ok"}
+
+
+async def test_agent_feeds_a_tool_error_back_instead_of_failing(monkeypatch):
+    from app.harness import runner
+
+    ctx, _ = _context(monkeypatch, [
+        _tool_call("nonexistent"),
+        _tool_call("finish", '{"answer": "ok"}'),
+    ])
+    _register_finish(ctx)
+
+    # An unknown tool comes back as a typed result the model sees and works
+    # around — it must not abort the loop.
+    output = await runner.AgentScheduler("sys", ["look", "finish"], "finish").run(ctx)
+    assert output == {"answer": "ok"}
+
+
+async def test_agent_only_offers_the_tools_it_declared(monkeypatch):
+    from app.harness import runner, tools
+
+    ctx, _ = _context(monkeypatch, [_tool_call("finish", '{"answer": "ok"}')])
+    _register_finish(ctx)
+
+    async def secret() -> dict:
+        return tools.ok({})
+
+    ctx.registry.register(tools.Tool(
+        name="secret", description="", parameters={}, handler=secret,
+    ))
+
+    seen: list = []
+    original = ctx.call_model_raw
+
+    async def spy(messages, *, tool_definitions=None):
+        seen.append(tool_definitions)
+        return await original(messages, tool_definitions=tool_definitions)
+
+    ctx.call_model_raw = spy
+    await runner.AgentScheduler("sys", ["look", "finish"], "finish").run(ctx)
+
+    offered = {d["function"]["name"] for d in seen[0]}
+    assert offered == {"look", "finish"}
+
+
+async def test_agent_does_not_accept_an_empty_reply_as_an_answer(monkeypatch):
+    # Returning {"text": ""} would read as a successful terminal answer.
+    from app.harness import runner
+
+    ctx, _ = _context(monkeypatch, [
+        {"content": "   "},
+        _tool_call("finish", '{"answer": "real answer"}'),
+    ])
+    _register_finish(ctx)
+
+    assert await runner.AgentScheduler(
+        "sys", ["look", "finish"], "finish"
+    ).run(ctx) == {"answer": "real answer"}

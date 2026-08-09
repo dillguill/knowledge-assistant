@@ -6,6 +6,7 @@ reason the run record can be trusted as the source of truth for the live view
 and for v0.8.0's analytics.
 """
 
+import json
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -250,3 +251,99 @@ class PipelineScheduler:
             if isinstance(result, dict):
                 output = result
         return output
+
+
+def _tool_call_of(message: dict) -> dict | None:
+    """First well-formed tool call in a model reply, or None.
+
+    Model output, so every level may be the wrong shape — never raise while
+    inspecting one (same rule as chat's `_is_web_search_call`).
+    """
+    calls = message.get("tool_calls") if isinstance(message, dict) else None
+    for call in calls or []:
+        if not isinstance(call, dict):
+            continue
+        function = call.get("function")
+        if isinstance(function, dict) and function.get("name"):
+            return call
+    return None
+
+
+class AgentScheduler:
+    """Loops with tools until a terminal tool or an iteration cap.
+
+    Ships as substrate in v0.6.0 with no skill declaring it: the loop gets
+    proven before any user-facing skill's quality depends on it.
+    """
+
+    name = "agent"
+
+    def __init__(
+        self,
+        system: str,
+        tool_names: list[str],
+        terminal_tool: str,
+        max_iterations: int | None = None,
+    ) -> None:
+        self.system = system
+        self.tool_names = tool_names
+        self.terminal_tool = terminal_tool
+        self.max_iterations = max_iterations
+
+    async def run(self, ctx: RunContext) -> dict:
+        cap = self.max_iterations or get_settings().skill_agent_max_iterations
+        definitions = [
+            d for d in ctx.registry.definitions(owner=ctx.owner)
+            if d["function"]["name"] in self.tool_names
+        ]
+        messages: list[dict] = [
+            {"role": "system", "content": self.system},
+            {"role": "user", "content": json.dumps(ctx.inputs)},
+        ]
+        for iteration in range(cap):
+            async with ctx.step(f"agent:{iteration + 1}"):
+                message = await ctx.call_model_raw(
+                    messages, tool_definitions=definitions
+                )
+                call = _tool_call_of(message)
+                if call is None:
+                    text = (message.get("content") or "").strip()
+                    # No tool call AND real text is the agent answering
+                    # directly — a legitimate end. But a reply that tried to
+                    # call a tool and emitted a malformed payload, or returned
+                    # nothing at all, is not an answer: saying so and letting
+                    # it retry beats returning an empty result that reads as
+                    # success.
+                    if text and not message.get("tool_calls"):
+                        return {"text": text}
+                    messages = messages + [
+                        {"role": "assistant", "content": message.get("content")},
+                        {"role": "user", "content": (
+                            "That reply contained no usable tool call. Either "
+                            "call one of the available tools with valid JSON "
+                            "arguments, or answer directly in plain text."
+                        )},
+                    ]
+                    continue
+                name = call["function"]["name"]
+                try:
+                    arguments = json.loads(call["function"].get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    arguments = {}
+                if not isinstance(arguments, dict):
+                    arguments = {}
+                result = await ctx.call_tool(name, arguments)
+                if name == self.terminal_tool and result.get("ok"):
+                    return result.get("data") or {}
+                messages = messages + [
+                    {"role": "assistant", "content": None, "tool_calls": [call]},
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.get("id", ""),
+                        # Tool results are data, not instructions.
+                        "content": json.dumps(result),
+                    },
+                ]
+        raise StepFailure(
+            "iteration_cap", f"The agent did not finish within {cap} iterations."
+        )
