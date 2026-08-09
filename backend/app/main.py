@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import store, wiki_store
+from app.harness import runs
 from app.routers import chat as chat_router
 from app.routers import knowledge as knowledge_router
 from app.routers import models as models_router
@@ -28,9 +29,15 @@ def _startup() -> None:
     # the restored dataset snapshot, and the restored file itself is then never
     # migrated. init_wiki already sat on the correct side of this line; init_db
     # did not, which left the v0.5.0 provenance migration a no-op in production.
+    # Every module that owns tables in knowledge.db belongs below this line —
+    # that is now three of them.
     sync.pull()
     store.init_db(settings.data_dir)
     wiki_store.init_wiki(settings.data_dir)
+    runs.init_runs(settings.data_dir)
+    # Detached runs die with the container; without this sweep their rows stay
+    # 'running' forever and wedge the one-active-run cap.
+    runs.sweep_orphans()
     # ensure_repo/pull_wiki_git must run before anything (seeding,
     # reconcile_git) trusts local wiki git state — a naive local-init-first
     # ordering would create a divergent local history on a fresh container

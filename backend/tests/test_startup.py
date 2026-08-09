@@ -218,3 +218,59 @@ def test_startup_migrates_a_database_restored_by_pull(tmp_path, monkeypatch):
     assert doc["origin"] == "web"
 
     get_settings.cache_clear()
+
+
+def test_startup_creates_run_tables_in_a_database_restored_by_pull(tmp_path, monkeypatch):
+    """init_runs must sit AFTER sync.pull(), like init_db and init_wiki.
+
+    Third instance of the same bug class (see the two tests above). New tables
+    are additive so there is no migration to miss, but a container that creates
+    them before pull() overwrites the file has no run tables at all afterwards
+    — and every skills request 500s on 'no such table: skill_runs'.
+    """
+    from app.harness import runs
+
+    # A pre-v0.6.0 database: real content, no run tables.
+    old_dir = tmp_path / "old"
+    old_dir.mkdir()
+    store.init_db(str(old_dir))
+    wiki_store.init_wiki(str(old_dir))
+    old_db = old_dir / "knowledge.db"
+    with sqlite3.connect(old_db) as conn:
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+    assert "skill_runs" not in tables
+
+    monkeypatch.setattr(sync, "pull", lambda: Path(old_db).replace(tmp_path / "knowledge.db"))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+
+    _startup()
+
+    with sqlite3.connect(tmp_path / "knowledge.db") as conn:
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+    assert "skill_runs" in tables
+    assert "skill_run_steps" in tables
+    # And the sweep ran without exploding on an empty table.
+    assert runs.list_runs() == []
+
+    get_settings.cache_clear()
+
+
+def test_startup_sweeps_a_run_left_running_by_a_restart(tmp_path, monkeypatch):
+    from app.harness import runs
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    store.init_db(str(tmp_path))
+    runs.init_runs(str(tmp_path))
+    run = runs.create_run("research_brief", "pipeline", None, {})
+    runs.start_run(run["id"])
+
+    _startup()
+
+    assert runs.get_run(run["id"])["error_code"] == "orphaned"
+    get_settings.cache_clear()
