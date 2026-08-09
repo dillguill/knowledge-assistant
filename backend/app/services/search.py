@@ -16,6 +16,8 @@ from app.db import store
 log = logging.getLogger(__name__)
 
 _FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v2/search"
+_FIRECRAWL_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape"
+_FIRECRAWL_MAP_URL = "https://api.firecrawl.dev/v2/map"
 
 
 class SearchError(Exception):
@@ -68,6 +70,43 @@ class WebResult:
         )
 
 
+def _raise_for_status(resp: httpx.Response) -> None:
+    """The one status ladder shared by search, scrape, and map. Specific
+    subclasses before the parent, and a 429 is never reported as a spent
+    monthly quota."""
+    if resp.status_code == 429:
+        header = resp.headers.get("Retry-After", "")
+        raise SearchRateLimitedError(
+            "rate limited (429)", int(header) if header.isdigit() else None
+        )
+    if resp.status_code == 402:
+        raise SearchQuotaError("quota exhausted (402)")
+    if resp.status_code in (401, 403):
+        raise SearchUnavailableError(f"auth rejected ({resp.status_code})")
+    if resp.status_code >= 400:
+        raise SearchError(f"upstream status {resp.status_code}")
+
+
+async def _firecrawl_post(url: str, payload: dict) -> dict:
+    settings = get_settings()
+    if not settings.firecrawl_api_key:
+        raise SearchUnavailableError("web access is not configured on this server")
+    headers = {"Authorization": f"Bearer {settings.firecrawl_api_key}"}
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(90, connect=15)) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+    except httpx.HTTPError as exc:
+        raise SearchError(f"transport error: {exc}") from exc
+    _raise_for_status(resp)
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        raise SearchError("malformed response") from exc
+    if not isinstance(body, dict):
+        raise SearchError("malformed response")
+    return body
+
+
 class SearchProvider(Protocol):
     async def search(self, query: str, max_results: int) -> list[WebResult]: ...
 
@@ -77,37 +116,16 @@ class FirecrawlProvider:
     rather than snippets — the archive and grounding both need the real body."""
 
     async def search(self, query: str, max_results: int) -> list[WebResult]:
-        settings = get_settings()
         payload = {
             "query": query,
             "limit": max_results,
             "sources": [{"type": "web"}],
             "scrapeOptions": {"formats": [{"type": "markdown"}]},
         }
-        headers = {"Authorization": f"Bearer {settings.firecrawl_api_key}"}
+        body = await _firecrawl_post(_FIRECRAWL_SEARCH_URL, payload)
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(90, connect=15)) as client:
-                resp = await client.post(
-                    _FIRECRAWL_SEARCH_URL, json=payload, headers=headers
-                )
-        except httpx.HTTPError as exc:
-            raise SearchError(f"search transport error: {exc}") from exc
-
-        if resp.status_code == 429:
-            header = resp.headers.get("Retry-After", "")
-            raise SearchRateLimitedError(
-                "search rate limited (429)", int(header) if header.isdigit() else None
-            )
-        if resp.status_code == 402:
-            raise SearchQuotaError("search quota exhausted (402)")
-        if resp.status_code in (401, 403):
-            raise SearchUnavailableError(f"search auth rejected ({resp.status_code})")
-        if resp.status_code >= 400:
-            raise SearchError(f"search upstream status {resp.status_code}")
-
-        try:
-            web = resp.json()["data"]["web"]
-        except (KeyError, TypeError, ValueError) as exc:
+            web = body["data"]["web"]
+        except (KeyError, TypeError) as exc:
             raise SearchError("malformed search response") from exc
 
         return [
@@ -177,3 +195,50 @@ def error_code(exc: Exception) -> str:
         if isinstance(exc, exc_type):
             return code
     return "search_failed"
+
+
+async def scrape_url(url: str) -> WebResult:
+    """Fetch one page as markdown.
+
+    The result is written into the same `web_search_cache` keyed by URL, so
+    `store.find_cached_result` — and therefore the owner save-to-knowledge
+    path — finds a scraped page exactly as it finds a searched one.
+    """
+    body = await _firecrawl_post(
+        _FIRECRAWL_SCRAPE_URL,
+        {
+            "url": url,
+            "formats": ["markdown"],
+            # Headers, navs, and footers are noise in a grounded source.
+            "onlyMainContent": True,
+        },
+    )
+    data = body.get("data") or {}
+    metadata = data.get("metadata") or {}
+    result = WebResult(
+        url=url,
+        title=metadata.get("title") or url,
+        content=data.get("markdown") or "",
+        excerpt=metadata.get("description") or "",
+    )
+    store.put_cached_search(url, 1, [result.to_dict()])
+    return result
+
+
+async def map_site(url: str, query: str = "", limit: int | None = None) -> list[dict]:
+    """List a site's URLs without rendering them — cheap reconnaissance."""
+    capped = limit or get_settings().site_map_max_links
+    payload: dict = {"url": url, "limit": capped}
+    if query:
+        payload["search"] = query
+    body = await _firecrawl_post(_FIRECRAWL_MAP_URL, payload)
+    links = body.get("links") or []
+    return [
+        {
+            "url": link.get("url", ""),
+            "title": link.get("title") or "",
+            "description": link.get("description") or "",
+        }
+        for link in links
+        if isinstance(link, dict) and link.get("url")
+    ][:capped]

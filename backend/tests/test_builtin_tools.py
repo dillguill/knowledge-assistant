@@ -95,3 +95,85 @@ async def test_the_tool_definition_declares_its_query_parameter():
     params = definition["function"]["parameters"]
     assert params["properties"]["query"]["type"] == "string"
     assert params["required"] == ["query"]
+
+
+async def test_fetch_url_is_registered_owner_only_and_truncated(monkeypatch):
+    from app.harness import builtin_tools
+
+    async def fake_scrape(url):
+        return search.WebResult(url=url, title="T", content="x" * 50_000, excerpt="e")
+
+    monkeypatch.setattr(search, "scrape_url", fake_scrape)
+    monkeypatch.setenv("WEB_SCRAPE_CHAR_BUDGET", "100")
+    get_settings.cache_clear()
+
+    registry = builtin_tools.default_registry()
+    assert "fetch_url" not in {
+        d["function"]["name"] for d in registry.definitions(owner=False)
+    }
+
+    result = await registry.dispatch("fetch_url", {"url": "https://a.test"}, owner=True)
+    # The result goes back into a model's context; a 50k-char page would swamp it.
+    assert len(result["data"]["content"]) <= 100 + len("\n[…truncated]")
+    assert result["data"]["title"] == "T"
+
+
+async def test_fetch_url_leaves_a_short_page_untruncated(monkeypatch):
+    from app.harness import builtin_tools
+
+    async def fake_scrape(url):
+        return search.WebResult(url=url, title="T", content="short body", excerpt="e")
+
+    monkeypatch.setattr(search, "scrape_url", fake_scrape)
+    registry = builtin_tools.default_registry()
+    result = await registry.dispatch("fetch_url", {"url": "https://a.test"}, owner=True)
+    assert result["data"]["content"] == "short body"
+
+
+async def test_site_map_returns_links_as_a_typed_result(monkeypatch):
+    from app.harness import builtin_tools
+
+    async def fake_map(url, query="", limit=None):
+        return [{"url": "https://a.test/1", "title": "P1", "description": "d"}]
+
+    monkeypatch.setattr(search, "map_site", fake_map)
+    registry = builtin_tools.default_registry()
+    result = await registry.dispatch(
+        "site_map", {"url": "https://a.test", "query": "pricing"}, owner=True
+    )
+    assert result["data"]["links"][0]["url"] == "https://a.test/1"
+
+
+async def test_a_scrape_failure_is_a_typed_tool_error(monkeypatch):
+    from app.harness import builtin_tools
+
+    async def fake_scrape(url):
+        raise search.SearchQuotaError("402")
+
+    monkeypatch.setattr(search, "scrape_url", fake_scrape)
+    registry = builtin_tools.default_registry()
+    result = await registry.dispatch("fetch_url", {"url": "https://a.test"}, owner=True)
+    assert result["error"]["code"] == "search_quota_exhausted"
+
+
+async def test_a_site_map_failure_is_a_typed_tool_error(monkeypatch):
+    from app.harness import builtin_tools
+
+    async def fake_map(url, query="", limit=None):
+        raise search.SearchRateLimitedError("429", retry_after=5)
+
+    monkeypatch.setattr(search, "map_site", fake_map)
+    registry = builtin_tools.default_registry()
+    result = await registry.dispatch("site_map", {"url": "https://a.test"}, owner=True)
+    assert result["error"]["code"] == "search_rate_limited"
+
+
+async def test_every_registered_tool_is_owner_only_this_milestone():
+    # Each one spends a shared paid allowance from a publicly reachable server.
+    from app.harness import builtin_tools
+
+    registry = builtin_tools.default_registry()
+    assert registry.definitions(owner=False) == []
+    assert {d["function"]["name"] for d in registry.definitions(owner=True)} == {
+        "web_search", "fetch_url", "site_map",
+    }

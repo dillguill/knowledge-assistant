@@ -51,7 +51,83 @@ def web_search_tool() -> tools.Tool:
     )
 
 
+_FETCH_URL_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "url": {"type": "string", "description": "The page URL to fetch."},
+    },
+    "required": ["url"],
+    "additionalProperties": False,
+}
+
+_SITE_MAP_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "url": {"type": "string", "description": "The site to map."},
+        "query": {
+            "type": "string",
+            "description": "Optional relevance filter for the returned URLs.",
+        },
+    },
+    "required": ["url"],
+    "additionalProperties": False,
+}
+
+_TRUNCATION_NOTE = "\n[…truncated]"
+
+
+async def _fetch_url(url: str = "") -> dict:
+    """Fetch one page. Truncated to a budget: the result goes back into a
+    model's context, and a long page would swamp it."""
+    try:
+        result = await search.scrape_url(url)
+    except search.SearchError as exc:
+        return tools.err(search.error_code(exc), str(exc))
+    budget = get_settings().web_scrape_char_budget
+    content = result.content[:budget]
+    if len(result.content) > budget:
+        content += _TRUNCATION_NOTE
+    return tools.ok({"url": result.url, "title": result.title, "content": content})
+
+
+async def _site_map(url: str = "", query: str = "") -> dict:
+    """List a site's URLs without rendering the pages — cheap reconnaissance."""
+    try:
+        links = await search.map_site(url, query)
+    except search.SearchError as exc:
+        return tools.err(search.error_code(exc), str(exc))
+    return tools.ok({"links": links})
+
+
+def fetch_url_tool() -> tools.Tool:
+    return tools.Tool(
+        name="fetch_url",
+        description=(
+            "Fetch the readable content of a specific web page as markdown. "
+            "Use when a URL is already known, rather than searching for one."
+        ),
+        parameters=_FETCH_URL_PARAMETERS,
+        handler=_fetch_url,
+        owner_only=True,
+    )
+
+
+def site_map_tool() -> tools.Tool:
+    return tools.Tool(
+        name="site_map",
+        description=(
+            "List the URLs on a website, optionally filtered by relevance to a "
+            "query. Use to find which page on a known site to fetch."
+        ),
+        parameters=_SITE_MAP_PARAMETERS,
+        handler=_site_map,
+        owner_only=True,
+    )
+
+
 def default_registry() -> tools.ToolRegistry:
     registry = tools.ToolRegistry()
     registry.register(web_search_tool())
+    registry.register(fetch_url_tool())
+    registry.register(site_map_tool())
     return registry
