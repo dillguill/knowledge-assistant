@@ -127,3 +127,93 @@ async def test_a_transport_error_becomes_an_upstream_error():
     respx.post(UPSTREAM).mock(side_effect=httpx.ConnectTimeout("timed out"))
     with pytest.raises(openrouter.UpstreamError):
         await openrouter.complete(None, [{"role": "user", "content": "hi"}])
+
+
+@respx.mock
+async def test_complete_message_returns_usage_alongside_the_message():
+    from app.services import openrouter
+
+    route = respx.post(UPSTREAM).respond(
+        json={
+            "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 5},
+        }
+    )
+
+    message, usage = await openrouter.complete_message(
+        "m:free", [{"role": "user", "content": "x"}]
+    )
+
+    assert message["content"] == "hi"
+    assert usage == {"prompt_tokens": 11, "completion_tokens": 5}
+    assert route.called
+
+
+@respx.mock
+async def test_complete_message_passes_response_format_and_tools():
+    from app.services import openrouter
+
+    route = respx.post(UPSTREAM).respond(
+        json={"choices": [{"message": {"content": "{}"}}]}
+    )
+
+    fmt = {"type": "json_schema", "json_schema": {"name": "plan"}}
+    await openrouter.complete_message(
+        "m:free", [{"role": "user", "content": "x"}],
+        tools=TOOLS, response_format=fmt,
+    )
+
+    sent = json.loads(route.calls[0].request.content)
+    assert sent["response_format"] == fmt
+    assert sent["tools"] == TOOLS
+    assert sent["tool_choice"] == "auto"
+
+
+@respx.mock
+async def test_complete_message_omits_absent_optional_fields():
+    # Sending response_format: null to a provider that doesn't accept it is a
+    # 400 on some upstreams — omit rather than nullify.
+    from app.services import openrouter
+
+    route = respx.post(UPSTREAM).respond(
+        json={"choices": [{"message": {"content": "hi"}}]}
+    )
+
+    await openrouter.complete_message("m:free", [{"role": "user", "content": "x"}])
+
+    sent = json.loads(route.calls[0].request.content)
+    assert "response_format" not in sent
+    assert "tools" not in sent
+
+
+@respx.mock
+async def test_complete_message_returns_empty_usage_when_upstream_omits_it():
+    from app.services import openrouter
+
+    respx.post(UPSTREAM).respond(json={"choices": [{"message": {"content": "hi"}}]})
+
+    _, usage = await openrouter.complete_message(
+        "m:free", [{"role": "user", "content": "x"}]
+    )
+    assert usage == {}
+
+
+@respx.mock
+async def test_complete_message_still_raises_the_specific_upstream_errors():
+    from app.services import openrouter
+
+    respx.post(UPSTREAM).respond(status_code=429, headers={"Retry-After": "17"})
+
+    with pytest.raises(openrouter.RateLimitedError) as excinfo:
+        await openrouter.complete_message("m:free", [{"role": "user", "content": "x"}])
+    assert excinfo.value.retry_after == 17
+
+
+@respx.mock
+async def test_complete_message_rejects_a_non_json_200():
+    from app.services import openrouter
+
+    respx.post(UPSTREAM).respond(status_code=200, text="<html>gateway</html>")
+
+    with pytest.raises(openrouter.UpstreamError):
+        await openrouter.complete_message("m:free", [{"role": "user", "content": "x"}])
