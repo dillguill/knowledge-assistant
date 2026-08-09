@@ -247,3 +247,28 @@ def list_steps(run_id: int) -> list[dict]:
             (run_id,),
         ).fetchall()
     return [_step_dict(r) for r in rows]
+
+
+def sweep_orphans() -> int:
+    """Mark runs left mid-flight by a restart as failed. Returns how many.
+
+    Detached runs live on the event loop, so a container restart destroys them
+    with no chance to record anything. Without this, the row stays `running`
+    forever AND permanently wedges the one-active-run cap.
+    """
+    with _connect() as conn:
+        cur = conn.execute(
+            f"""UPDATE skill_runs
+                SET status = 'failed', error_code = 'orphaned',
+                    error_message = 'The server restarted while this run was in progress.',
+                    finished_at = datetime('now')
+                WHERE status IN ({','.join('?' * len(_ACTIVE))})""",
+            _ACTIVE,
+        )
+        swept = cur.rowcount
+        conn.execute(
+            """UPDATE skill_run_steps
+               SET status = 'failed', error = 'orphaned'
+               WHERE status = 'running'"""
+        )
+    return swept

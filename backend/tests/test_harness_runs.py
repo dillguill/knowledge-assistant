@@ -88,3 +88,30 @@ def test_list_runs_is_newest_first():
     runs.finish_run(b["id"], {})
 
     assert [r["id"] for r in runs.list_runs()] == [b["id"], a["id"]]
+
+
+def test_sweep_marks_interrupted_runs_failed():
+    from app.harness import runs
+
+    run = runs.create_run("research_brief", "pipeline", None, {})
+    runs.start_run(run["id"])
+    step = runs.add_step(run["id"], "draft")
+
+    assert runs.sweep_orphans() == 1
+
+    swept = runs.get_run(run["id"])
+    assert swept["status"] == "failed"
+    assert swept["error_code"] == "orphaned"
+    # The unfinished step is closed too, or the timeline renders a step that
+    # spins forever in the run history.
+    assert runs.list_steps(run["id"])[0]["status"] == "failed"
+    assert step is not None
+    # And the slot is free again.
+    assert runs.create_run("research_brief", "pipeline", None, {})
+
+
+def test_sweep_is_a_noop_on_an_empty_table():
+    from app.harness import runs
+
+    # Runs on every boot, including the first one after deploy.
+    assert runs.sweep_orphans() == 0
