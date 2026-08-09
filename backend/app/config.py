@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     web_search_max_results: int = 5
     web_search_cache_ttl_s: int = 3600
     web_search_char_budget: int = 12000
+    skill_max_model_calls: int = 12
+    skill_max_sections: int = 4
+    skill_contract_retries: int = 2
+    skill_agent_max_iterations: int = 6
 
     @property
     def origins(self) -> list[str]:

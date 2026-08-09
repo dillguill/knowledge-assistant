@@ -28,3 +28,15 @@ def test_web_search_settings_have_defaults():
     assert s.web_search_max_results == 5
     assert s.web_search_cache_ttl_s == 3600
     assert s.web_search_char_budget == 12000
+
+
+def test_skill_settings_have_defaults():
+    from app.config import Settings
+
+    s = Settings(_env_file=None)
+    # Counted per run INCLUDING contract retries — the ceiling exists because
+    # the free OpenRouter allowance is 50 requests/day, shared with chat.
+    assert s.skill_max_model_calls == 12
+    assert s.skill_max_sections == 4
+    assert s.skill_contract_retries == 2
+    assert s.skill_agent_max_iterations == 6
