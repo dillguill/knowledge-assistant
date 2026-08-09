@@ -1,4 +1,5 @@
 import type { ChatModelAdapter, ThreadMessage } from "@assistant-ui/react";
+import { parseSse } from "@/lib/sse";
 import { loadSettings } from "../settings/settings-storage";
 import { consumeCreatePageMode } from "./create-page-mode";
 import { requestEditTarget } from "./target-selection";
@@ -87,34 +88,6 @@ function toApiMessages(messages: readonly ThreadMessage[]) {
       .map((p) => p.text)
       .join("\n"),
   }));
-}
-
-async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerator<SseEvent> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let sep: number;
-      while ((sep = buffer.indexOf("\n\n")) !== -1) {
-        const raw = buffer.slice(0, sep);
-        buffer = buffer.slice(sep + 2);
-        if (!raw.startsWith("data: ")) continue;
-        const data = raw.slice("data: ".length);
-        if (data === "[DONE]") return;
-        try {
-          yield JSON.parse(data) as SseEvent;
-        } catch {
-          // skip malformed events
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
 }
 
 export type SourceConfig = {
@@ -212,7 +185,7 @@ export function createApiAdapter(
           kind: s.kind ?? "document",
           slug: s.slug,
         }));
-      for await (const event of parseSse(response.body)) {
+      for await (const event of parseSse<SseEvent>(response.body)) {
         if (event.type === "error") {
           // A search error is non-terminal: the backend keeps streaming an
           // answer without web results, so throwing here would abort a turn
