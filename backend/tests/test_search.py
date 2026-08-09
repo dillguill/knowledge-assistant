@@ -172,3 +172,30 @@ async def test_402_is_an_exhausted_quota():
     respx.post(SEARCH_URL).respond(status_code=402, json={"error": "out of credits"})
     with pytest.raises(search.SearchQuotaError):
         await search.run_search("anything")
+
+
+def test_error_code_maps_each_failure_to_its_own_code():
+    from app.services import search
+
+    # Specific subclasses before the parent: a transient 429 must never be
+    # reported as a spent monthly quota.
+    assert search.error_code(search.SearchRateLimitedError("x")) == "search_rate_limited"
+    assert search.error_code(search.SearchQuotaError("x")) == "search_quota_exhausted"
+    assert search.error_code(search.SearchUnavailableError("x")) == "search_unavailable"
+    assert search.error_code(search.SearchError("x")) == "search_failed"
+    assert search.error_code(RuntimeError("x")) == "search_failed"
+
+
+def test_every_error_code_has_user_facing_copy():
+    from app.services import search
+
+    codes = {
+        search.error_code(exc)
+        for exc in (
+            search.SearchRateLimitedError("x"),
+            search.SearchQuotaError("x"),
+            search.SearchUnavailableError("x"),
+            search.SearchError("x"),
+        )
+    }
+    assert codes <= set(search.ERROR_MESSAGES)
