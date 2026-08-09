@@ -1,9 +1,24 @@
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchored to backend/ rather than the process CWD, so `uv run uvicorn ...`
+# picks the same file up whether it is launched from backend/ or the repo root.
+# A real environment variable still wins over anything in the file, which is
+# what keeps the Space (env vars only, no .env shipped) unaffected.
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE,
+        env_file_encoding="utf-8",
+        # A shared .env may carry unrelated keys (frontend VITE_*, tooling);
+        # they are not this model's business and must not raise.
+        extra="ignore",
+    )
+
     openrouter_api_key: str = ""
     allowed_origins: str = "https://dillguill.github.io,http://localhost:5173"
     default_model: str = "google/gemma-4-26b-a4b-it:free"
