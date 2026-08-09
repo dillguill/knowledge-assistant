@@ -72,6 +72,15 @@ async def execute(skill, run: dict, inputs: dict, owner: bool) -> None:
         if exc.retry_after is not None:
             event["retry_after"] = exc.retry_after
         events.publish(run_id, event)
+    except asyncio.CancelledError:
+        # CancelledError is a BaseException, so the broad `except Exception`
+        # below would NOT catch it — without this the run row would be left at
+        # 'running' until the next boot's sweep. Re-raised after recording, so
+        # asyncio still sees a properly cancelled task.
+        runs.cancel_run(run_id)
+        events.publish(run_id, {"type": "error", "code": "cancelled",
+                                "message": "The run was cancelled."})
+        raise
     except Exception as exc:
         log.exception("run %s failed unexpectedly", run_id)
         runs.fail_run(run_id, "internal_error", str(exc))
@@ -91,3 +100,17 @@ async def drain() -> None:
     """Await every in-flight run. Test helper; also useful for a clean shutdown."""
     while _tasks:
         await asyncio.gather(*list(_tasks.values()), return_exceptions=True)
+
+
+def cancel(run_id: int) -> bool:
+    """Stop an in-flight run. Returns False when there is nothing to stop.
+
+    The row is written by `execute`'s CancelledError handler rather than here,
+    so cancellation records itself through the same path whether it is
+    requested or arrives some other way.
+    """
+    task = _tasks.get(run_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True

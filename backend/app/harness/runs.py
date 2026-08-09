@@ -272,3 +272,27 @@ def sweep_orphans() -> int:
                WHERE status = 'running'"""
         )
     return swept
+
+
+def cancel_run(run_id: int) -> None:
+    """Terminal, and deliberately distinct from 'failed': the user stopped this
+    on purpose, and run history should say so rather than implying a defect.
+
+    Only an active run is touched — cancelling an already-terminal run must not
+    rewrite a finished record.
+    """
+    with _connect() as conn:
+        conn.execute(
+            f"""UPDATE skill_runs
+                SET status = 'cancelled',
+                    error_message = 'The run was cancelled.',
+                    finished_at = datetime('now')
+                WHERE id = ? AND status IN ({','.join('?' * len(_ACTIVE))})""",
+            (run_id, *_ACTIVE),
+        )
+        conn.execute(
+            """UPDATE skill_run_steps
+               SET status = 'failed', error = 'cancelled'
+               WHERE run_id = ? AND status = 'running'""",
+            (run_id,),
+        )

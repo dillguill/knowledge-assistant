@@ -182,3 +182,86 @@ async def test_the_run_context_carries_the_validated_input_and_owner_flag():
     assert captured["inputs"] == {"topic": "sqlite"}
     assert captured["owner"] is False
     assert captured["model"] == "m:free"
+
+
+async def test_cancelling_stops_the_run_and_records_it():
+    from app.harness import executor, runs
+
+    started = asyncio.Event()
+
+    async def work(ctx):
+        started.set()
+        await asyncio.sleep(60)  # never completes on its own
+        return {}
+
+    run = await executor.start(_skill(_Scheduler(work)), {"topic": "x"}, None, owner=True)
+    await started.wait()
+
+    assert executor.cancel(run["id"]) is True
+    await executor.drain()
+
+    # CancelledError is a BaseException — without an explicit handler in
+    # execute() this row would still say 'running'.
+    assert runs.get_run(run["id"])["status"] == "cancelled"
+    assert executor._tasks == {}
+
+
+async def test_cancelling_an_unknown_or_finished_run_reports_false():
+    from app.harness import executor, runs
+
+    async def work(ctx):
+        return {}
+
+    assert executor.cancel(999) is False
+
+    run = await executor.start(_skill(_Scheduler(work)), {"topic": "x"}, None, owner=True)
+    await executor.drain()
+    # Already terminal: nothing to cancel, and the record must not be rewritten.
+    assert executor.cancel(run["id"]) is False
+    assert runs.get_run(run["id"])["status"] == "succeeded"
+
+
+async def test_a_cancelled_run_closes_its_stream():
+    from app.harness import events, executor
+
+    started = asyncio.Event()
+
+    async def work(ctx):
+        started.set()
+        await asyncio.sleep(60)
+        return {}
+
+    run = await executor.start(_skill(_Scheduler(work)), {"topic": "x"}, None, owner=True)
+    queue = events.subscribe(run["id"])
+    await started.wait()
+    executor.cancel(run["id"])
+    await executor.drain()
+
+    seen = []
+    while not queue.empty():
+        seen.append(queue.get_nowait())
+    # The `finally` in execute() must still run on cancellation.
+    assert seen[-1] is events.DONE
+    assert any(e is not events.DONE and e.get("code") == "cancelled" for e in seen)
+
+
+async def test_cancelling_frees_the_slot_for_a_new_run():
+    from app.harness import executor
+
+    started = asyncio.Event()
+
+    async def blocking(ctx):
+        started.set()
+        await asyncio.sleep(60)
+        return {}
+
+    async def quick(ctx):
+        return {}
+
+    first = await executor.start(_skill(_Scheduler(blocking)), {"topic": "x"}, None, owner=True)
+    await started.wait()
+    executor.cancel(first["id"])
+    await executor.drain()
+
+    assert await executor.start(_skill(_Scheduler(quick)), {"topic": "y"}, None, owner=True)
+    await executor.drain()
