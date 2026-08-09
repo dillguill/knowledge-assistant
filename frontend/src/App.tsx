@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "@/app/shell";
 import { onChatViewRequest } from "@/app/chat-navigation";
-import { onWikiNavigationRequest } from "@/app/wiki-navigation";
+import {
+  onWikiNavigationRequest,
+  onWikiProposalsRequest,
+} from "@/app/wiki-navigation";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatPage } from "@/features/chat/chat-page";
@@ -11,18 +14,20 @@ import { TopbarStatus } from "@/features/chat/topbar-status";
 import { DocumentsPage } from "@/features/knowledge/documents-page";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { SettingsProvider } from "@/features/settings/settings-provider";
+import { SkillsPage } from "@/features/skills/skills-page";
 import { WikiPage } from "@/features/wiki/wiki-page";
 
-type View = "chat" | "settings" | "documents" | "wiki";
+type View = "chat" | "settings" | "documents" | "wiki" | "skills";
 const TITLES: Record<View, string> = {
   chat: "Chat",
   settings: "Settings",
   documents: "Documents",
   wiki: "Wiki",
+  skills: "Skills",
 };
 
 const VIEW_KEY = "knowledge-assistant:active-view";
-const VIEWS: View[] = ["chat", "settings", "documents", "wiki"];
+const VIEWS: View[] = ["chat", "settings", "documents", "wiki", "skills"];
 
 function loadView(): View {
   const stored = localStorage.getItem(VIEW_KEY);
@@ -37,6 +42,8 @@ function App() {
   // Bumped when the Wiki nav item is clicked, so `WikiPage` resets to its top
   // level even when it's already the active view (a nested page/folder).
   const [wikiHomeToken, setWikiHomeToken] = useState(0);
+  // Bumped when a finished skill run asks to open the proposals inbox.
+  const [wikiProposalsToken, setWikiProposalsToken] = useState(0);
 
   const setView = (next: View) => {
     localStorage.setItem(VIEW_KEY, next);
@@ -54,6 +61,15 @@ function App() {
 
   useEffect(() => onChatViewRequest(() => setView("chat")), []);
 
+  useEffect(
+    () =>
+      onWikiProposalsRequest(() => {
+        setView("wiki");
+        setWikiProposalsToken((t) => t + 1);
+      }),
+    [],
+  );
+
   return (
     <SettingsProvider>
       {/* assistant-ui's attachment tiles render a raw Radix Tooltip, so the app
@@ -70,7 +86,8 @@ function App() {
                 id === "chat" ||
                 id === "settings" ||
                 id === "documents" ||
-                id === "wiki"
+                id === "wiki" ||
+                id === "skills"
               ) {
                 // Re-clicking Wiki jumps back to its top level (clears any open
                 // page/folder), matching the expectation that a nav item is
@@ -89,11 +106,13 @@ function App() {
             </div>
             {view === "settings" && <SettingsPage />}
             {view === "documents" && <DocumentsPage />}
+            {view === "skills" && <SkillsPage />}
             {view === "wiki" && (
               <WikiPage
                 openSlug={wikiOpenSlug}
                 onOpened={() => setWikiOpenSlug(null)}
                 homeToken={wikiHomeToken}
+                openProposalsToken={wikiProposalsToken}
               />
             )}
           </AppShell>
