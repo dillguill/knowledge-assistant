@@ -475,3 +475,21 @@ async def test_agent_does_not_accept_an_empty_reply_as_an_answer(monkeypatch):
     assert await runner.AgentScheduler(
         "sys", ["look", "finish"], "finish"
     ).run(ctx) == {"answer": "real answer"}
+
+
+async def test_a_rate_limited_step_records_the_providers_own_reason(monkeypatch):
+    # Otherwise the run record says only "rate limited", and nobody can tell a
+    # one-minute throttle from a spent daily allowance.
+    from app.harness import contracts, runner
+    from app.services import openrouter
+
+    ctx, _ = _context(
+        monkeypatch,
+        [openrouter.RateLimitedError(retry_after=None, detail="free-models-per-day")],
+    )
+    with pytest.raises(runner.StepFailure) as excinfo:
+        async with ctx.step("plan"):
+            await ctx.call_model([{"role": "user", "content": "go"}],
+                                 contracts.JsonContract(Plan))
+    assert excinfo.value.code == "rate_limited"
+    assert "free-models-per-day" in excinfo.value.message

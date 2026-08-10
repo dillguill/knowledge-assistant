@@ -157,3 +157,31 @@ def test_the_boot_sweep_leaves_cancelled_runs_alone():
 
     assert runs.sweep_orphans() == 0
     assert runs.get_run(run["id"])["status"] == "cancelled"
+
+
+def test_cancelling_records_how_long_the_unfinished_step_ran():
+    # The step demonstrably ran; recording None loses the one number the
+    # timeline shows for it.
+    from app.harness import runs
+
+    run = runs.create_run("research_brief", "pipeline", None, {})
+    runs.start_run(run["id"])
+    runs.add_step(run["id"], "plan")
+
+    runs.cancel_run(run["id"])
+
+    step = runs.list_steps(run["id"])[0]
+    assert step["latency_ms"] is not None
+    assert step["latency_ms"] >= 0
+
+
+def test_the_orphan_sweep_also_times_the_step_it_closes():
+    from app.harness import runs
+
+    run = runs.create_run("research_brief", "pipeline", None, {})
+    runs.start_run(run["id"])
+    runs.add_step(run["id"], "draft")
+
+    runs.sweep_orphans()
+
+    assert runs.list_steps(run["id"])[0]["latency_ms"] is not None

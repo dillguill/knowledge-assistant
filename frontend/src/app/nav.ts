@@ -22,6 +22,6 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "wiki", label: "Wiki", icon: BookOpen, planned: false },
   { id: "documents", label: "Documents", icon: FileText, planned: false },
   { id: "analytics", label: "Analytics", icon: BarChart3, planned: true },
-  { id: "skills", label: "Skills", icon: Sparkles, planned: true },
+  { id: "skills", label: "Skills", icon: Sparkles, planned: false },
   { id: "settings", label: "Settings", icon: Settings, planned: false },
 ];

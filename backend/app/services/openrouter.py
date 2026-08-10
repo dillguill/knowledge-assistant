@@ -1,10 +1,13 @@
 import json
+import logging
 import time
 from typing import Any, AsyncIterator
 
 import httpx
 
 from app.config import get_settings
+
+log = logging.getLogger(__name__)
 
 _MODEL_CACHE_TTL_S = 300
 _model_cache: tuple[float, list[dict[str, Any]]] | None = None
@@ -15,15 +18,38 @@ class UpstreamError(Exception):
 
 
 class RateLimitedError(UpstreamError):
-    def __init__(self, retry_after: int | None = None):
-        super().__init__("rate limited")
+    """A 429. `detail` carries the provider's own reason.
+
+    "Wait a minute", "the daily free allowance is spent", and "this model is
+    busy" are different instructions to give a user, and OpenRouter says which
+    one applies — discarding it leaves the failure undiagnosable.
+    """
+
+    def __init__(self, retry_after: int | None = None, detail: str = ""):
+        super().__init__(f"rate limited: {detail}" if detail else "rate limited")
         self.retry_after = retry_after
+        self.detail = detail
 
 
 class ModelGoneError(UpstreamError):
     def __init__(self, model: str):
         super().__init__(f"model unavailable: {model}")
         self.model = model
+
+
+
+def _rate_limit_detail(body: object) -> str:
+    """Pull the provider's reason out of a 429 body. Never raises: a 429 with
+    an HTML body is still a 429."""
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            return error["message"]
+        if isinstance(error, str):
+            return error
+        if isinstance(body.get("message"), str):
+            return body["message"]
+    return ""
 
 
 async def stream_chat(
@@ -50,7 +76,15 @@ async def stream_chat(
         ) as resp:
             if resp.status_code == 429:
                 header = resp.headers.get("Retry-After", "")
-                raise RateLimitedError(int(header) if header.isdigit() else None)
+                await resp.aread()
+                try:
+                    detail = _rate_limit_detail(resp.json())
+                except ValueError:
+                    detail = ""
+                log.warning("openrouter 429 (stream): %s", detail or "no detail")
+                raise RateLimitedError(
+                    int(header) if header.isdigit() else None, detail
+                )
             if resp.status_code == 404:
                 raise ModelGoneError(payload["model"])
             if resp.status_code >= 400:
@@ -93,7 +127,12 @@ async def _post_completion_body(payload: dict) -> dict:
         raise UpstreamError(f"transport error: {exc}") from exc
     if resp.status_code == 429:
         header = resp.headers.get("Retry-After", "")
-        raise RateLimitedError(int(header) if header.isdigit() else None)
+        try:
+            detail = _rate_limit_detail(resp.json())
+        except ValueError:
+            detail = ""
+        log.warning("openrouter 429: %s", detail or "no detail")
+        raise RateLimitedError(int(header) if header.isdigit() else None, detail)
     if resp.status_code == 404:
         raise ModelGoneError(payload["model"])
     if resp.status_code >= 400:

@@ -170,11 +170,14 @@ export function WikiPage({
   openSlug,
   onOpened,
   homeToken,
+  openProposalsToken,
 }: {
   openSlug?: string | null;
   onOpened?: () => void;
   /** Increments when the Wiki nav item is re-clicked — resets to the root. */
   homeToken?: number;
+  /** Increments when a finished skill run asks to review its proposal. */
+  openProposalsToken?: number;
 } = {}) {
   const { tree: rawTree, loading: treeLoading, error: treeError, refresh: refreshTree } = useWikiTree();
   const [route, setRoute] = useState<WikiRoute>(loadRoute);
@@ -227,6 +230,17 @@ export function WikiPage({
     }
     setRoute({ kind: "folder", id: null });
   }, [homeToken]);
+
+  // Same skip-the-mount rule as homeToken: a restored location must not be
+  // overwritten just because the app started.
+  const firstProposals = useRef(true);
+  useEffect(() => {
+    if (firstProposals.current) {
+      firstProposals.current = false;
+      return;
+    }
+    setRoute({ kind: "proposals" });
+  }, [openProposalsToken]);
 
   const treePanel = !treeLoading && !treeError && (
     <WikiTreePanel

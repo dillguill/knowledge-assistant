@@ -31,3 +31,25 @@ export function onWikiNavigationRequest(fn: Listener): () => void {
     if (listener === fn) listener = null;
   };
 }
+
+export type WikiProposalsRequest = { token: number };
+type ProposalsListener = (request: WikiProposalsRequest) => void;
+
+let proposalsListener: ProposalsListener | null = null;
+let proposalsCounter = 0;
+
+/** Called when a finished skill run offers "Review proposal". Same pub/sub
+ * pattern as `requestWikiPage` — the Skills page has no other way to reach the
+ * wiki's proposals inbox without a router. */
+export function requestWikiProposals(): void {
+  proposalsCounter += 1;
+  proposalsListener?.({ token: proposalsCounter });
+}
+
+/** Called once by `App.tsx`. Returns an unsubscribe function. */
+export function onWikiProposalsRequest(fn: ProposalsListener): () => void {
+  proposalsListener = fn;
+  return () => {
+    if (proposalsListener === fn) proposalsListener = null;
+  };
+}

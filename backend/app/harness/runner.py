@@ -181,9 +181,13 @@ class RunContext:
         # Specific subclasses before the shared parent: a routine 429 must not
         # flatten into a generic outage, and the user needs the retry_after.
         except openrouter.RateLimitedError as exc:
+            # Carry the provider's own reason into the run record: a per-minute
+            # throttle and a spent daily allowance need different instructions,
+            # and only the provider knows which one this is.
+            reason = f" ({exc.detail})" if exc.detail else ""
             raise StepFailure(
                 "rate_limited",
-                "The model provider rate limited this run.",
+                f"The model provider rate limited this run{reason}.",
                 exc.retry_after,
             ) from exc
         except openrouter.ModelGoneError as exc:

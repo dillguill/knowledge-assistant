@@ -265,3 +265,36 @@ async def test_cancelling_frees_the_slot_for_a_new_run():
 
     assert await executor.start(_skill(_Scheduler(quick)), {"topic": "y"}, None, owner=True)
     await executor.drain()
+
+
+async def test_a_run_records_the_model_that_will_actually_serve_it():
+    """The frontend sends null when no model is picked, but a model still runs
+    — the default. Recording null leaves run history unable to say what
+    produced the output, and v0.8.0's per-model breakdown with a hole in it.
+    """
+    from app.config import get_settings
+    from app.harness import executor, runs
+
+    async def work(ctx):
+        return {"model_seen": ctx.model}
+
+    run = await executor.start(_skill(_Scheduler(work)), {"topic": "x"}, None, owner=True)
+    await executor.drain()
+
+    expected = get_settings().default_model
+    assert runs.get_run(run["id"])["model"] == expected
+    # The context agrees with the record, so the row is not merely decorative.
+    assert runs.get_run(run["id"])["output"] == {"model_seen": expected}
+
+
+async def test_an_explicit_model_is_recorded_unchanged():
+    from app.harness import executor, runs
+
+    async def work(ctx):
+        return {}
+
+    run = await executor.start(
+        _skill(_Scheduler(work)), {"topic": "x"}, "explicit/model:free", owner=True
+    )
+    await executor.drain()
+    assert runs.get_run(run["id"])["model"] == "explicit/model:free"
