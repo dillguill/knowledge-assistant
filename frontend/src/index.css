@@ -37,6 +37,32 @@
   --sidebar-accent-foreground: oklch(0.95 0.008 250);
   --sidebar-border: oklch(0.36 0.05 255);
   --sidebar-ring: oklch(0.52 0.11 250);
+
+  /* Semantic status. `--destructive` already existed, so "offline" was a
+     token while "waking" and "online" were raw Tailwind palette classes
+     (amber-600 / emerald-400). Same hue intent as the original mockup's
+     --gate / --ok, expressed in this palette's OKLCH space. */
+  --warning: oklch(0.67 0.15 75);
+  --warning-foreground: oklch(0.99 0.005 90);
+  --success: oklch(0.6 0.13 158);
+  --success-foreground: oklch(0.99 0.005 160);
+
+  /* Elevation as three named steps, not five ad-hoc shadow utilities.
+     raised = interactive/primary surface, overlay = floats above content. */
+  --elevation-flat: 0 0 0 0 transparent;
+  --elevation-raised:
+    0 1px 2px -1px oklch(0.235 0.02 255 / 0.08),
+    0 2px 6px -2px oklch(0.235 0.02 255 / 0.06);
+  --elevation-overlay:
+    0 4px 12px -4px oklch(0.235 0.02 255 / 0.12),
+    0 12px 32px -12px oklch(0.235 0.02 255 / 0.14);
+
+  /* Motion. One easing, three durations, so transitions across surfaces feel
+     like one app instead of per-component guesses. */
+  --ease-emphasis: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
 }
 
 .dark {
@@ -71,9 +97,58 @@
   --sidebar-accent-foreground: oklch(0.95 0.008 250);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.68 0.1 250);
+
+  /* Lifted for legibility on a dark ground, matching how --destructive and
+     the sidebar tokens already shift between themes. */
+  --warning: oklch(0.79 0.14 78);
+  --warning-foreground: oklch(0.22 0.03 80);
+  --success: oklch(0.75 0.14 160);
+  --success-foreground: oklch(0.2 0.03 160);
+
+  /* Shadow reads as near-black on a dark ground; elevation there comes from
+     surface lightness, so these stay deliberately shallow. */
+  --elevation-raised: 0 1px 2px -1px oklch(0 0 0 / 0.4);
+  --elevation-overlay:
+    0 4px 12px -4px oklch(0 0 0 / 0.5), 0 12px 32px -12px oklch(0 0 0 / 0.6);
 }
 
 @theme inline {
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+
+  --shadow-raised: var(--elevation-raised);
+  --shadow-overlay: var(--elevation-overlay);
+
+  --ease-emphasis: var(--ease-emphasis);
+
+  /* The type scale. The app previously used text-sm/text-xs for 91% of all
+     sized text and nothing above text-base except four headings, so nothing
+     could lead. These are semantic steps, not raw sizes: a page has one
+     display, sections take heading, body is body. */
+  --text-display: 1.75rem;
+  --text-display--line-height: 2.125rem;
+  --text-display--letter-spacing: -0.02em;
+  --text-display--font-weight: 650;
+
+  --text-heading: 1.0625rem;
+  --text-heading--line-height: 1.5rem;
+  --text-heading--letter-spacing: -0.01em;
+  --text-heading--font-weight: 600;
+
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.375rem;
+
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1.125rem;
+
+  /* The existing mono eyebrow convention, promoted from copy-paste to a
+     token (see DESIGN.md "Typography"). */
+  --text-eyebrow: 0.6875rem;
+  --text-eyebrow--line-height: 1rem;
+  --text-eyebrow--letter-spacing: 0.06em;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

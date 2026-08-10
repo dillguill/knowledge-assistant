@@ -11,8 +11,8 @@ const STATUS_LABELS = {
 
 const STATUS_STYLES = {
   demo: "text-muted-foreground",
-  waking: "text-amber-600 dark:text-amber-400 animate-pulse motion-reduce:animate-none",
-  online: "text-emerald-600 dark:text-emerald-400",
+  waking: "text-warning animate-pulse motion-reduce:animate-none",
+  online: "text-success",
   offline: "text-destructive",
 } as const;
 
