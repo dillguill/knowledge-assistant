@@ -13,12 +13,8 @@ import {
   ReasoningText,
   ReasoningTrigger,
 } from "@/components/assistant-ui/reasoning";
-import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
-import {
-  ToolGroupContent,
-  ToolGroupRoot,
-  ToolGroupTrigger,
-} from "@/components/assistant-ui/tool-group";
+import { StepRailBox } from "@/components/assistant-ui/step-rail";
+import { ToolStep } from "@/components/assistant-ui/tool-step";
 import { ComposerTriggerPopover } from "@/components/assistant-ui/composer-trigger-popover";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
@@ -520,7 +516,10 @@ const MessageError: FC = () => {
 
 const AssistantMessage: FC = () => {
   const {
-    ToolFallback: ToolFallbackComponent = ToolFallback,
+    // Defaults to the rail node rather than ToolFallback's expandable raw
+    // payload block. `ToolFallback` is still exported and can be restored
+    // per-thread through this same `components` prop.
+    ToolFallback: ToolFallbackComponent = ToolStep,
     ToolGroup,
     ReasoningGroup,
   } = useContext(ThreadComponentsContext);
@@ -575,15 +574,25 @@ const AssistantMessage: FC = () => {
                 if (ToolGroup) {
                   return <ToolGroup group={part}>{children}</ToolGroup>;
                 }
-                return (
-                  <ToolGroupRoot variant="ghost">
-                    <ToolGroupTrigger
-                      count={part.indices.length}
-                      active={part.status.type === "running"}
-                    />
-                    <ToolGroupContent>{children}</ToolGroupContent>
-                  </ToolGroupRoot>
-                );
+                {
+                  // The rail, not ToolGroupRoot's ghost list: each call is a
+                  // bead with its query visible, and the box collapses to a
+                  // summary once the turn finishes.
+                  const running = part.status.type === "running";
+                  const count = part.indices.length;
+                  return (
+                    <StepRailBox
+                      label={
+                        running
+                          ? "Working"
+                          : `${count} step${count === 1 ? "" : "s"}`
+                      }
+                      running={running}
+                    >
+                      {children}
+                    </StepRailBox>
+                  );
+                }
               case "group-reasoning": {
                 if (ReasoningGroup) {
                   return (

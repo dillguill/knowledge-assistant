@@ -48,62 +48,71 @@ const BEAD: Record<StepStatus, string> = {
   pending: "border-border bg-card",
 };
 
-function StepNode({ step, last }: { step: RailStep; last: boolean }) {
-  const muted = step.status === "pending";
+/**
+ * One node. Exported standalone because the chat thread receives its tool
+ * calls as already-rendered children and cannot hand this component a step
+ * array — it composes `StepRailBox` + `StepRailNode` directly instead.
+ *
+ * The connector is a `::after` on the row with `last:after:hidden`, rather
+ * than a `last` prop, so a caller that maps over children never has to know
+ * which node is final.
+ */
+export function StepRailNode({
+  kind,
+  name,
+  status,
+  detail,
+  payload,
+  duration,
+}: Omit<RailStep, "id">) {
+  const muted = status === "pending";
   return (
-    <li className={cn("grid grid-cols-[16px_1fr] gap-2.5", !last && "pb-3")}>
-      <span className="relative flex justify-center">
+    <li
+      data-status={status}
+      className={cn(
+        "relative grid grid-cols-[16px_1fr] gap-2.5 pb-3 last:pb-0",
+        // Connector to the next bead, tinted once the step has passed so the
+        // completed span of the run reads at a glance.
+        "after:absolute after:top-4 after:bottom-0 after:left-[7.25px] after:w-0.5 after:bg-border after:content-['']",
+        "data-[status=succeeded]:after:bg-success/45 last:after:hidden",
+      )}
+    >
+      <span className="flex justify-center">
         <span
           aria-hidden
           className={cn(
-            "z-10 mt-1 size-2.5 shrink-0 rounded-full border-2",
-            BEAD[step.status],
-            step.status === "running" &&
-              "animate-pulse motion-reduce:animate-none",
+            "relative z-10 mt-1 size-2.5 shrink-0 rounded-full border-2",
+            BEAD[status],
+            status === "running" && "animate-pulse motion-reduce:animate-none",
           )}
         />
-        {/* Connector to the next bead. Tinted once the step has passed, so
-            the completed span of the run reads at a glance. */}
-        {!last && (
-          <span
-            aria-hidden
-            className={cn(
-              "absolute top-4 -bottom-1.5 left-1/2 -ml-px w-0.5",
-              step.status === "succeeded" ? "bg-success/45" : "bg-border",
-            )}
-          />
-        )}
       </span>
 
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="flex items-baseline gap-2">
-          {step.kind && (
+          {kind && (
             <span
               className={cn(
-                "font-mono text-eyebrow text-muted-foreground uppercase",
+                "shrink-0 font-mono text-eyebrow text-muted-foreground uppercase",
                 muted && "opacity-45",
               )}
             >
-              {step.kind}
+              {kind}
             </span>
           )}
-          <span
-            className={cn("truncate text-body font-medium", muted && "opacity-45")}
-          >
-            {step.name}
+          <span className={cn("truncate text-body font-medium", muted && "opacity-45")}>
+            {name}
           </span>
-          {step.duration && (
+          {duration && (
             <span className="ms-auto shrink-0 font-mono text-eyebrow tabular-nums text-muted-foreground">
-              {step.duration}
+              {duration}
             </span>
           )}
         </div>
-        {step.detail && (
-          <p className="text-meta text-muted-foreground">{step.detail}</p>
-        )}
-        {step.payload && (
+        {detail && <p className="text-meta text-muted-foreground">{detail}</p>}
+        {payload && (
           <pre className="mt-0.5 overflow-x-auto rounded-md bg-muted px-2 py-1.5 font-mono text-eyebrow text-muted-foreground">
-            {step.payload}
+            {payload}
           </pre>
         )}
       </div>
@@ -111,29 +120,24 @@ function StepNode({ step, last }: { step: RailStep; last: boolean }) {
   );
 }
 
-export function StepRail({
-  steps,
-  running,
+/** The collapsible shell, without opinions about what fills it. */
+export function StepRailBox({
+  label,
   summary,
+  running,
+  failed,
   defaultOpen,
   className,
+  children,
 }: {
-  steps: RailStep[];
-  /** Drives the spinner and the shimmer, and keeps the box open by default. */
-  running?: boolean;
-  /** The collapsed line: what the steps proved, not just how many. */
+  label: string;
   summary?: string;
+  running?: boolean;
+  failed?: boolean;
   defaultOpen?: boolean;
   className?: string;
+  children: ReactNode;
 }) {
-  if (steps.length === 0) return null;
-
-  const failed = steps.some((s) => s.status === "failed");
-  const done = steps.filter((s) => s.status === "succeeded").length;
-  const label = running
-    ? "Working"
-    : `${steps.length} step${steps.length === 1 ? "" : "s"}`;
-
   return (
     <Collapsible
       // Open while it works so the user can watch; closed once finished so a
@@ -156,9 +160,7 @@ export function StepRail({
           <Check aria-hidden className="size-3 shrink-0 text-success" />
         )}
         <span className="text-body font-medium text-foreground">{label}</span>
-        <span className="truncate font-mono text-eyebrow">
-          {summary ?? (running ? `step ${done + 1} of ${steps.length}` : "")}
-        </span>
+        {summary && <span className="truncate font-mono text-eyebrow">{summary}</span>}
         <ChevronDown
           aria-hidden
           className="ms-auto size-3 shrink-0 -rotate-90 transition-transform duration-200 ease-emphasis group-data-open/rail:rotate-0 motion-reduce:transition-none"
@@ -167,15 +169,47 @@ export function StepRail({
 
       <CollapsibleContent className="overflow-hidden data-closed:animate-collapsible-up data-open:animate-collapsible-down">
         <ol className="flex flex-col border-t border-border/60 px-3 pt-2.5 pb-3">
-          {steps.map((step, i) => (
-            <StepNode
-              key={step.id}
-              step={step}
-              last={i === steps.length - 1}
-            />
-          ))}
+          {children}
         </ol>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+/** Data-driven convenience wrapper — what a caller holding step rows uses. */
+export function StepRail({
+  steps,
+  running,
+  summary,
+  defaultOpen,
+  className,
+}: {
+  steps: RailStep[];
+  /** Drives the spinner and keeps the box open by default. */
+  running?: boolean;
+  /** The collapsed line: what the steps proved, not just how many. */
+  summary?: string;
+  defaultOpen?: boolean;
+  className?: string;
+}) {
+  if (steps.length === 0) return null;
+
+  const done = steps.filter((s) => s.status === "succeeded").length;
+
+  return (
+    <StepRailBox
+      label={
+        running ? "Working" : `${steps.length} step${steps.length === 1 ? "" : "s"}`
+      }
+      summary={summary ?? (running ? `step ${done + 1} of ${steps.length}` : undefined)}
+      running={running}
+      failed={steps.some((s) => s.status === "failed")}
+      defaultOpen={defaultOpen}
+      className={className}
+    >
+      {steps.map(({ id, ...step }) => (
+        <StepRailNode key={id} {...step} />
+      ))}
+    </StepRailBox>
   );
 }
