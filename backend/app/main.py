@@ -9,6 +9,7 @@ from app.harness import runs
 from app.routers import chat as chat_router
 from app.routers import knowledge as knowledge_router
 from app.routers import models as models_router
+from app.routers import skills as skills_router
 from app.routers import wiki as wiki_router
 from app.services import sync, wiki_git
 from app.services.corpus import seed_demo_corpus
@@ -69,6 +70,7 @@ def configure(app: FastAPI) -> FastAPI:
     app.include_router(knowledge_router.router)
     app.include_router(knowledge_router.attachments_router)
     app.include_router(wiki_router.router)
+    app.include_router(skills_router.router)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

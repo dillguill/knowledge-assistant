@@ -36,20 +36,6 @@ WEB_SEARCH_TOOL = {
     },
 }
 
-_SEARCH_ERROR_CODES = {
-    search.SearchRateLimitedError: "search_rate_limited",
-    search.SearchQuotaError: "search_quota_exhausted",
-    search.SearchUnavailableError: "search_unavailable",
-}
-
-_SEARCH_ERROR_MESSAGES = {
-    "search_rate_limited": "Web search is rate limited — wait a moment, then retry.",
-    "search_quota_exhausted": "The web search quota is exhausted — answering without web results.",
-    "search_unavailable": "Web search is not available — answering without web results.",
-    "search_failed": "The web search failed — answering without web results.",
-}
-
-
 class ChatMessage(BaseModel):
     role: Literal["system", "user", "assistant"]
     content: str
@@ -76,15 +62,6 @@ def _last_user_message(messages: list[dict]) -> str:
         if message.get("role") == "user":
             return message.get("content", "")
     return ""
-
-
-def _search_error_code(exc: Exception) -> str:
-    # Specific subclasses before the shared parent — a quota 402 must not
-    # collapse into a generic failure message.
-    for exc_type, code in _SEARCH_ERROR_CODES.items():
-        if isinstance(exc, exc_type):
-            return code
-    return "search_failed"
 
 
 def _is_web_search_call(call: object) -> bool:
@@ -166,7 +143,7 @@ async def _sse(request: ChatRequest) -> AsyncIterator[str]:
                         }
                     )
                 except search.SearchError as exc:
-                    search_error = _search_error_code(exc)
+                    search_error = search.error_code(exc)
                 messages.append(
                     {
                         "role": "assistant",
@@ -212,14 +189,14 @@ async def _sse(request: ChatRequest) -> AsyncIterator[str]:
                     }
                 )
             except search.SearchError as exc:
-                search_error = _search_error_code(exc)
+                search_error = search.error_code(exc)
 
     if search_error:
         yield _event(
             {
                 "type": "error",
                 "code": search_error,
-                "message": _SEARCH_ERROR_MESSAGES[search_error],
+                "message": search.ERROR_MESSAGES[search_error],
             }
         )
 

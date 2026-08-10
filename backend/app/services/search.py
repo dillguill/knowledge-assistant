@@ -152,3 +152,28 @@ async def run_search(
     results = await provider.search(query, limit)
     store.put_cached_search(query, limit, [r.to_dict() for r in results])
     return results
+
+
+# Ordered most-specific first: `error_code` walks this in order, so a
+# SearchRateLimitedError must never be tested after its parent.
+_ERROR_CODES = {
+    SearchRateLimitedError: "search_rate_limited",
+    SearchQuotaError: "search_quota_exhausted",
+    SearchUnavailableError: "search_unavailable",
+}
+
+ERROR_MESSAGES = {
+    "search_rate_limited": "Web search is rate limited — wait a moment, then retry.",
+    "search_quota_exhausted": "The web search quota is exhausted — answering without web results.",
+    "search_unavailable": "Web search is not available — answering without web results.",
+    "search_failed": "The web search failed — answering without web results.",
+}
+
+
+def error_code(exc: Exception) -> str:
+    """One typed code per failure mode, shared by the chat router and the
+    harness tool so the two can never drift."""
+    for exc_type, code in _ERROR_CODES.items():
+        if isinstance(exc, exc_type):
+            return code
+    return "search_failed"
