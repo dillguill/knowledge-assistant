@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadSettings } from "@/features/settings/settings-storage";
 import { updatePage } from "@/features/wiki/api";
@@ -12,19 +13,26 @@ import { bumpTargetRefresh, useTargetPage, useTargetSelection } from "./target-s
 const noResolve: WikiLinkResolver = () => ({ slug: "", exists: false });
 
 /**
- * Shows the wiki page currently pinned as the chat's Target: a side panel on
- * md+ screens, a bottom sheet on narrower ones (a single responsively-styled
- * element rather than two separately-mounted instances, so there's one fetch
- * and one piece of state regardless of viewport). Owners can flip to an
- * inline editor (reusing the same `PageEditor` the wiki page view uses);
- * visitors only ever see the rendered page.
+ * Shows the wiki page currently pinned as the chat's Target, modelled on an
+ * artifacts panel: on md+ it splits the content area beside the thread; below
+ * md it takes the content area over entirely (the topbar stays reachable).
+ * One responsively-styled element rather than two separately-mounted
+ * instances, so there's one fetch and one piece of state regardless of
+ * viewport. Owners can flip to an inline editor (reusing the same
+ * `PageEditor` the wiki page view uses); visitors only ever see the rendered
+ * page.
+ *
+ * Closing the panel does not unpin the page — `panelOpen` is separate state,
+ * and the composer's "Editing:" pill reopens it. An earlier version was
+ * `hidden md:flex` with every class md-prefixed, so below md a pinned target
+ * rendered nothing at all; the mobile branch here is that bug's fix.
  *
  * Fetching is shared with `proposal-card.tsx` via `useTargetPage()` (both
  * need "the current content of the targeted page") rather than each keeping
  * its own copy of the same fetch-on-target-change effect.
  */
 export function TargetPanel() {
-  const { targetPageId, setTargetPageId } = useTargetSelection();
+  const { targetPageId, setTargetPageId, setPanelOpen } = useTargetSelection();
   const { page } = useTargetPage();
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [draft, setDraft] = useState("");
@@ -62,22 +70,46 @@ export function TargetPanel() {
   }
 
   return (
-    <div
+    <aside
       aria-label="Target page"
-      className="hidden md:flex md:h-full md:w-80 md:shrink-0 md:flex-col md:gap-3 md:overflow-y-auto md:border-s md:border-border md:bg-card md:p-4"
+      // Below md: takes over the content area (the parent row is `relative`).
+      // md+: a flexible split beside the thread rather than a fixed w-80, so
+      // the page being edited gets real room on a wide screen.
+      className="absolute inset-0 z-20 flex flex-col gap-3 overflow-y-auto bg-card p-4 md:static md:h-full md:w-[45%] md:max-w-[40rem] md:min-w-[22rem] md:shrink-0 md:border-s md:border-border"
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-semibold">
+        <h2 className="truncate text-sm font-semibold">
           Target{page ? `: ${page.title}` : ""}
-        </span>
-        <div className="flex shrink-0 gap-1">
+        </h2>
+        {/* h-11 below md keeps these at a 44px touch target; they are the
+            first controls a phone user reaches now that the panel renders. */}
+        <div className="flex shrink-0 items-center gap-1">
           {isOwner && mode === "view" && page && (
-            <Button size="sm" variant="outline" onClick={handleEdit}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-11 md:h-8"
+              onClick={handleEdit}
+            >
               Edit
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => setTargetPageId(null)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-11 md:h-8"
+            onClick={() => setTargetPageId(null)}
+          >
             Clear
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="Close target panel"
+            className="size-11 md:size-8"
+            onClick={() => setPanelOpen(false)}
+          >
+            <X className="size-4" />
           </Button>
         </div>
       </div>
@@ -89,7 +121,10 @@ export function TargetPanel() {
       )}
 
       {!page ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        // Announced rather than a silent swap from "Loading…" to content.
+        <p aria-live="polite" className="text-sm text-muted-foreground">
+          Loading…
+        </p>
       ) : mode === "view" ? (
         <WikiMarkdown content={page.content} resolve={noResolve} />
       ) : (
@@ -105,6 +140,6 @@ export function TargetPanel() {
           </div>
         </div>
       )}
-    </div>
+    </aside>
   );
 }
