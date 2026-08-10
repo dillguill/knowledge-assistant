@@ -72,10 +72,10 @@ async def stream_chat(
                     yield delta
 
 
-async def _post_completion(payload: dict) -> dict:
-    """POST a chat-completion payload to OpenRouter and return the raw assistant
-    message dict. Owns the headers, timeout, and the full status-code ladder shared
-    by `complete` and `complete_with_tools`."""
+async def _post_completion_body(payload: dict) -> dict:
+    """POST a chat-completion payload to OpenRouter and return the full decoded
+    body. Owns the headers, timeout, and the status-code ladder shared by every
+    caller."""
     settings = get_settings()
     headers = {
         "Authorization": f"Bearer {settings.openrouter_api_key}",
@@ -101,9 +101,54 @@ async def _post_completion(payload: dict) -> dict:
     try:
         # A 200 carrying a non-JSON body is just as malformed as a missing key,
         # and must not escape as a raw decode error mid-stream.
-        return resp.json()["choices"][0]["message"]
-    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        body = resp.json()
+    except ValueError as exc:
         raise UpstreamError("malformed completion response") from exc
+    if not isinstance(body, dict):
+        raise UpstreamError("malformed completion response")
+    return body
+
+
+def _message_of(body: dict) -> dict:
+    try:
+        return body["choices"][0]["message"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise UpstreamError("malformed completion response") from exc
+
+
+async def _post_completion(payload: dict) -> dict:
+    """The assistant message alone — what `complete`/`complete_with_tools` need."""
+    return _message_of(await _post_completion_body(payload))
+
+
+async def complete_message(
+    model: str | None,
+    messages: list[dict],
+    *,
+    tools: list[dict] | None = None,
+    response_format: dict | None = None,
+) -> tuple[dict, dict]:
+    """One completion, returning the assistant message AND the usage block.
+
+    The harness records tokens per step, so discarding usage the way `complete`
+    does would leave every step row half empty.
+    """
+    settings = get_settings()
+    payload: dict = {
+        "model": model or settings.default_model,
+        "messages": messages,
+        "stream": False,
+    }
+    # Omitted rather than sent as null: some providers 400 on a null
+    # response_format instead of ignoring it.
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+    if response_format:
+        payload["response_format"] = response_format
+    body = await _post_completion_body(payload)
+    usage = body.get("usage")
+    return _message_of(body), usage if isinstance(usage, dict) else {}
 
 
 async def complete(model: str | None, messages: list[dict[str, str]]) -> str:

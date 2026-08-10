@@ -115,3 +115,45 @@ def test_sweep_is_a_noop_on_an_empty_table():
 
     # Runs on every boot, including the first one after deploy.
     assert runs.sweep_orphans() == 0
+
+
+def test_cancelling_a_run_is_terminal_and_frees_the_slot():
+    from app.harness import runs
+
+    run = runs.create_run("research_brief", "pipeline", None, {})
+    runs.start_run(run["id"])
+    runs.add_step(run["id"], "draft")
+
+    runs.cancel_run(run["id"])
+
+    cancelled = runs.get_run(run["id"])
+    assert cancelled["status"] == "cancelled"
+    assert cancelled["finished_at"] is not None
+    # An unfinished step must not spin forever in the timeline.
+    assert runs.list_steps(run["id"])[0]["status"] == "failed"
+    assert runs.list_steps(run["id"])[0]["error"] == "cancelled"
+    # Terminal means the one-active-run cap lets the next run through.
+    assert runs.create_run("research_brief", "pipeline", None, {})
+
+
+def test_cancelling_an_already_terminal_run_does_not_rewrite_it():
+    from app.harness import runs
+
+    run = runs.create_run("research_brief", "pipeline", None, {})
+    runs.finish_run(run["id"], {"proposal_id": 1})
+
+    runs.cancel_run(run["id"])
+
+    assert runs.get_run(run["id"])["status"] == "succeeded"
+    assert runs.get_run(run["id"])["output"] == {"proposal_id": 1}
+
+
+def test_the_boot_sweep_leaves_cancelled_runs_alone():
+    from app.harness import runs
+
+    run = runs.create_run("research_brief", "pipeline", None, {})
+    runs.start_run(run["id"])
+    runs.cancel_run(run["id"])
+
+    assert runs.sweep_orphans() == 0
+    assert runs.get_run(run["id"])["status"] == "cancelled"
