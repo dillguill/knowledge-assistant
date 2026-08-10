@@ -32,7 +32,7 @@ const noResolve: WikiLinkResolver = () => ({ slug: "", exists: false });
  * its own copy of the same fetch-on-target-change effect.
  */
 export function TargetPanel() {
-  const { targetPageId, setTargetPageId, setPanelOpen } = useTargetSelection();
+  const { targetPageId, setPanelOpen } = useTargetSelection();
   const { page } = useTargetPage();
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [draft, setDraft] = useState("");
@@ -94,14 +94,9 @@ export function TargetPanel() {
               Edit
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-11 md:h-8"
-            onClick={() => setTargetPageId(null)}
-          >
-            Clear
-          </Button>
+          {/* Only closing lives here. Unpinning is the composer pill's X —
+              one place for "stop targeting this page", so the header does
+              not offer two near-identical dismissals. */}
           <Button
             size="icon"
             variant="ghost"

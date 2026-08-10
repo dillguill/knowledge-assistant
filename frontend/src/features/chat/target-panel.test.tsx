@@ -105,14 +105,24 @@ test("an owner can flip to edit (reusing PageEditor) and save", async () => {
   expect(updateSpy).toHaveBeenCalled();
 });
 
+// Changed from clicking a "Clear" button inside the panel: unpinning now
+// lives only on the composer pill's X, so the panel header does not offer two
+// near-identical dismissals. The behaviour asserted is the same one — losing
+// the target closes the panel — driven through the control that still exists.
 test("clearing the target closes the panel", async () => {
   localStorage.setItem(TARGET_STORAGE_KEY, JSON.stringify(5));
   vi.spyOn(wikiApi, "getPage").mockResolvedValue(page);
+  vi.spyOn(wikiApi, "getTree").mockResolvedValue({ folders: [], pages: [summary] });
+  vi.spyOn(knowledgeApi, "listCollections").mockResolvedValue([]);
   const user = userEvent.setup();
-  renderPanel();
+  render(
+    <TargetSelectionProvider>
+      <TargetSurface />
+    </TargetSelectionProvider>,
+  );
 
-  await screen.findByText("Target: Setup");
-  await user.click(screen.getByRole("button", { name: "Clear" }));
+  await screen.findByRole("complementary", { name: "Target page" });
+  await user.click(await screen.findByRole("button", { name: /^Remove Editing: / }));
   expect(screen.queryByLabelText("Target page")).not.toBeInTheDocument();
 });
 
