@@ -217,3 +217,45 @@ async def test_complete_message_rejects_a_non_json_200():
 
     with pytest.raises(openrouter.UpstreamError):
         await openrouter.complete_message("m:free", [{"role": "user", "content": "x"}])
+
+
+@respx.mock
+async def test_a_429_carries_the_upstream_reason_not_just_a_generic_message():
+    """OpenRouter says which limit was hit. 'Wait a minute', 'wait until the
+    daily quota resets', and 'this model is busy' are different instructions,
+    and flattening them loses the only actionable detail."""
+    from app.services import openrouter
+
+    respx.post(UPSTREAM).respond(
+        status_code=429,
+        json={"error": {"message": "Rate limit exceeded: free-models-per-day"}},
+    )
+
+    with pytest.raises(openrouter.RateLimitedError) as excinfo:
+        await openrouter.complete_message("m:free", [{"role": "user", "content": "x"}])
+    assert "free-models-per-day" in excinfo.value.detail
+
+
+@respx.mock
+async def test_a_429_without_a_parseable_body_still_raises_cleanly():
+    from app.services import openrouter
+
+    respx.post(UPSTREAM).respond(status_code=429, text="<html>too many</html>")
+
+    with pytest.raises(openrouter.RateLimitedError) as excinfo:
+        await openrouter.complete_message("m:free", [{"role": "user", "content": "x"}])
+    assert excinfo.value.detail == ""
+
+
+@respx.mock
+async def test_the_streaming_path_reports_the_same_reason():
+    from app.services import openrouter
+
+    respx.post(UPSTREAM).respond(
+        status_code=429, json={"error": {"message": "free-models-per-min"}}
+    )
+
+    with pytest.raises(openrouter.RateLimitedError) as excinfo:
+        async for _ in openrouter.stream_chat("m:free", [{"role": "user", "content": "x"}]):
+            pass
+    assert "free-models-per-min" in excinfo.value.detail
