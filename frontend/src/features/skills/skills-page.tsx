@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { requestWikiProposals } from "@/app/wiki-navigation";
+import { KeyRound, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { useModelSelection } from "@/features/chat/chat-provider";
 import { loadSettings } from "@/features/settings/settings-storage";
 import { getRun, listRuns, listSkills, startRun, type Run, type SkillSummary } from "./api";
@@ -20,13 +22,18 @@ function SkillCard({
   submitting: boolean;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <h3 className="text-sm font-semibold">{skill.label}</h3>
-      <p className="mt-1 text-sm text-muted-foreground">{skill.description}</p>
-      <div className="mt-4">
-        <SkillForm skill={skill} onSubmit={onSubmit} submitting={submitting} />
+    <Card className="gap-3 p-4 shadow-raised">
+      <div className="flex items-start gap-2.5">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
+          <Sparkles className="size-4" aria-hidden />
+        </span>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h3 className="text-heading">{skill.label}</h3>
+          <p className="text-meta text-muted-foreground">{skill.description}</p>
+        </div>
       </div>
-    </section>
+      <SkillForm skill={skill} onSubmit={onSubmit} submitting={submitting} />
+    </Card>
   );
 }
 
@@ -84,12 +91,18 @@ export function SkillsPage() {
 
   if (!isOwner) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
-        <h2 className="text-base font-semibold">Skills</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Running a skill needs an owner token — add one in Settings. Skills spend
-          a shared model allowance, so they stay owner-only.
-        </p>
+      <div className="mx-auto flex max-w-2xl flex-col gap-3 p-6">
+        <h1 className="text-display">Skills</h1>
+        <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border px-6 py-10 text-center">
+          <span className="flex size-12 items-center justify-center rounded-full bg-muted">
+            <KeyRound className="size-6 text-muted-foreground" aria-hidden />
+          </span>
+          <p className="text-heading">Owner access required</p>
+          <p className="max-w-sm text-body text-muted-foreground">
+            Running a skill needs an owner token — add one in Settings. Skills
+            spend a shared model allowance, so they stay owner-only.
+          </p>
+        </div>
       </div>
     );
   }
@@ -123,14 +136,22 @@ export function SkillsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-display">Skills</h1>
+        <p className="max-w-prose text-body text-muted-foreground">
+          Multi-step runs that research, draft, and file a wiki proposal for
+          your approval. Nothing they write lands without your review.
+        </p>
+      </header>
+
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-body text-destructive">
           {error}
         </p>
       )}
 
-      <div className="flex flex-col gap-4">
+      <div className="grid items-start gap-4 lg:grid-cols-2">
         {skills.map((skill) => (
           <SkillCard
             key={skill.name}
@@ -142,7 +163,7 @@ export function SkillsPage() {
       </div>
 
       <section className="flex flex-col gap-2">
-        <h3 className="text-sm font-semibold">Recent runs</h3>
+        <h2 className="text-heading">Recent runs</h2>
         <RunHistory runs={runs} onOpen={(id) => setView({ kind: "run", id })} />
       </section>
     </div>

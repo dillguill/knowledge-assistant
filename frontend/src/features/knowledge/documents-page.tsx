@@ -33,6 +33,26 @@ function fileExt(filename: string): string {
   return parts.length > 1 ? parts.pop()!.toUpperCase() : "FILE";
 }
 
+function Metric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-lg border border-border bg-card px-3 py-2.5">
+      <dt className="font-mono text-eyebrow text-muted-foreground uppercase">
+        {label}
+      </dt>
+      <dd className="text-heading text-xl tabular-nums">{value}</dd>
+      <dd className="text-meta text-muted-foreground">{detail}</dd>
+    </div>
+  );
+}
+
 export function DocumentsPage() {
   const { collections, loading: collectionsLoading, refresh } = useCollections();
   const [selected, setSelected] = useState<Collection | null>(null);
@@ -45,6 +65,10 @@ export function DocumentsPage() {
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const totalFiles = collections.reduce((sum, c) => sum + c.file_count, 0);
+  const emptyCollections = collections.filter((c) => c.file_count === 0).length;
+  const selectedBytes = files.reduce((sum, f) => sum + f.size_bytes, 0);
 
   useEffect(() => {
     syncStatus().then(setSync).catch(() => setSync(""));
@@ -114,6 +138,30 @@ export function DocumentsPage() {
             {error}
           </p>
         )}
+
+        {/* Summary before detail: the questions you arrive with, answered
+            before a single row. Every figure here is derived from data the
+            API already returns — there is no ingest-status field on a file,
+            so this deliberately makes no claim about indexing. */}
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Metric
+            label="Collections"
+            value={collectionsLoading ? "—" : String(collections.length)}
+            detail={
+              emptyCollections > 0 ? `${emptyCollections} empty` : "all in use"
+            }
+          />
+          <Metric
+            label="Files"
+            value={collectionsLoading ? "—" : String(totalFiles)}
+            detail="across all collections"
+          />
+          <Metric
+            label={selected ? `In ${selected.name}` : "Selected"}
+            value={selected ? formatSize(selectedBytes) : "—"}
+            detail={selected ? `${files.length} files` : "no collection picked"}
+          />
+        </dl>
 
         <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[16rem_1fr]">
           {/* Collections column */}
