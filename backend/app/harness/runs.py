@@ -267,8 +267,12 @@ def sweep_orphans() -> int:
         )
         swept = cur.rowcount
         conn.execute(
+            # created_at is the only start time that survives a restart — the
+            # in-memory timer died with the process, so latency comes from the
+            # row itself rather than being left null.
             """UPDATE skill_run_steps
-               SET status = 'failed', error = 'orphaned'
+               SET status = 'failed', error = 'orphaned',
+                   latency_ms = COALESCE(latency_ms, CAST((julianday('now') - julianday(created_at)) * 86400000 AS INTEGER))
                WHERE status = 'running'"""
         )
     return swept
@@ -291,8 +295,11 @@ def cancel_run(run_id: int) -> None:
             (run_id, *_ACTIVE),
         )
         conn.execute(
+            # The step really ran; recording None loses the one number the
+            # timeline shows for it.
             """UPDATE skill_run_steps
-               SET status = 'failed', error = 'cancelled'
+               SET status = 'failed', error = 'cancelled',
+                   latency_ms = COALESCE(latency_ms, CAST((julianday('now') - julianday(created_at)) * 86400000 AS INTEGER))
                WHERE run_id = ? AND status = 'running'""",
             (run_id,),
         )

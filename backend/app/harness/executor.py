@@ -9,6 +9,7 @@ import logging
 
 from pydantic import ValidationError
 
+from app.config import get_settings
 from app.harness import builtin_tools, events, runner, runs, tools
 from app.services import sync
 
@@ -42,7 +43,12 @@ async def start(skill, inputs: dict, model: str | None, owner: bool) -> dict:
         raise InvalidInput(str(exc)) from exc
 
     payload = validated.model_dump()
-    run = runs.create_run(skill.name, skill.scheduler.name, model, payload)
+    # Resolve the default HERE rather than at call time. The frontend sends
+    # null when no model is picked, but a model still runs — recording null
+    # leaves history unable to say what produced the output, and v0.8.0's
+    # per-model breakdown with a hole in exactly the dimension it analyses.
+    effective_model = model or get_settings().default_model
+    run = runs.create_run(skill.name, skill.scheduler.name, effective_model, payload)
     task = asyncio.create_task(execute(skill, run, payload, owner))
     _tasks[run["id"]] = task
     task.add_done_callback(lambda _t: _tasks.pop(run["id"], None))
