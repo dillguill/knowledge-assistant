@@ -53,16 +53,10 @@ function useSidebar() {
   return context
 }
 
-// LOCAL MODIFICATION to vendored shadcn: `enableKeyboardShortcut`.
-// The shortcut below is a bare window listener, so every mounted provider
-// answers the same ⌘B. The chat Target panel nests a second provider inside
-// the shell's, which without an opt-out toggles both sidebars at once.
-// Re-vendoring this file must carry this prop forward.
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
   onOpenChange: setOpenProp,
-  enableKeyboardShortcut = true,
   className,
   style,
   children,
@@ -71,7 +65,6 @@ function SidebarProvider({
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
-  enableKeyboardShortcut?: boolean
 }) {
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
@@ -102,7 +95,6 @@ function SidebarProvider({
 
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
-    if (!enableKeyboardShortcut) return
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
@@ -115,7 +107,7 @@ function SidebarProvider({
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [toggleSidebar, enableKeyboardShortcut])
+  }, [toggleSidebar])
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
