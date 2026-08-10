@@ -10,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatPage } from "@/features/chat/chat-page";
 import { ComposerCreateDialogs } from "@/features/chat/composer-create-dialogs";
 import { ChatProvider } from "@/features/chat/chat-provider";
+import { AnalyticsPage } from "@/features/analytics/analytics-page";
 import { TopbarStatus } from "@/features/chat/topbar-status";
 import { DocumentsPage } from "@/features/knowledge/documents-page";
 import { SettingsPage } from "@/features/settings/settings-page";
@@ -17,17 +18,25 @@ import { SettingsProvider } from "@/features/settings/settings-provider";
 import { SkillsPage } from "@/features/skills/skills-page";
 import { WikiPage } from "@/features/wiki/wiki-page";
 
-type View = "chat" | "settings" | "documents" | "wiki" | "skills";
+type View = "chat" | "settings" | "documents" | "wiki" | "skills" | "analytics";
 const TITLES: Record<View, string> = {
   chat: "Chat",
   settings: "Settings",
   documents: "Documents",
   wiki: "Wiki",
   skills: "Skills",
+  analytics: "Analytics",
 };
 
 const VIEW_KEY = "knowledge-assistant:active-view";
-const VIEWS: View[] = ["chat", "settings", "documents", "wiki", "skills"];
+const VIEWS: View[] = [
+  "chat",
+  "settings",
+  "documents",
+  "wiki",
+  "skills",
+  "analytics",
+];
 
 function loadView(): View {
   const stored = localStorage.getItem(VIEW_KEY);
@@ -87,7 +96,8 @@ function App() {
                 id === "settings" ||
                 id === "documents" ||
                 id === "wiki" ||
-                id === "skills"
+                id === "skills" ||
+                id === "analytics"
               ) {
                 // Re-clicking Wiki jumps back to its top level (clears any open
                 // page/folder), matching the expectation that a nav item is
@@ -107,6 +117,7 @@ function App() {
             {view === "settings" && <SettingsPage />}
             {view === "documents" && <DocumentsPage />}
             {view === "skills" && <SkillsPage />}
+            {view === "analytics" && <AnalyticsPage />}
             {view === "wiki" && (
               <WikiPage
                 openSlug={wikiOpenSlug}

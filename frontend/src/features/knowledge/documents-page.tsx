@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FileText, FolderOpen, Library, Plus, Upload } from "lucide-react";
+import { FileText, FolderOpen, Gauge, Library, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PlaceholderLines, Unavailable } from "@/components/ui/unavailable";
 import { cn } from "@/lib/utils";
 import {
   createCollection,
@@ -162,6 +163,21 @@ export function DocumentsPage() {
             detail={selected ? `${files.length} files` : "no collection picked"}
           />
         </dl>
+
+        {/* The slot for ingest status. Deliberately not a live metric: a file
+            record carries no indexing state today, so any figure here would
+            be invented. Marking the slot means the milestone that adds the
+            field fills it in rather than redesigning this header. */}
+        <Unavailable
+          title="Indexing status"
+          milestone="v0.7.0"
+          note="Which files are chunked and embedded, and which are still pending. Needs an ingest-state field on a document record."
+        >
+          <div className="flex items-center gap-3 p-4 pb-12">
+            <Gauge className="size-4 text-muted-foreground" aria-hidden />
+            <PlaceholderLines rows={2} />
+          </div>
+        </Unavailable>
 
         <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[16rem_1fr]">
           {/* Collections column */}

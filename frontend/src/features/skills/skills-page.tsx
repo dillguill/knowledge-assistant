@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { requestWikiProposals } from "@/app/wiki-navigation";
-import { KeyRound, Sparkles } from "lucide-react";
+import { Bot, KeyRound, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PlaceholderLines, Unavailable } from "@/components/ui/unavailable";
 import { useModelSelection } from "@/features/chat/chat-provider";
 import { loadSettings } from "@/features/settings/settings-storage";
 import { getRun, listRuns, listSkills, startRun, type Run, type SkillSummary } from "./api";
@@ -160,6 +161,27 @@ export function SkillsPage() {
             onSubmit={(inputs) => void handleRun(skill.name, inputs)}
           />
         ))}
+
+        {/* The agent scheduler shipped in v0.6.0 tested but with no skill
+            declaring it. Showing the slot is honest about that gap and gives
+            v0.6.5 somewhere to land. */}
+        <Unavailable
+          title="Agent skills"
+          milestone="v0.6.5"
+          note="A skill that chooses its own tools each step, rather than following a declared pipeline. The scheduler exists; no skill uses it yet."
+        >
+          <div className="flex flex-col gap-3 p-4 pb-16">
+            <div className="flex items-start gap-2.5">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent">
+                <Bot className="size-4" aria-hidden />
+              </span>
+              <div className="flex min-w-0 flex-col gap-1">
+                <span className="text-heading">Agent run</span>
+                <PlaceholderLines rows={2} />
+              </div>
+            </div>
+          </div>
+        </Unavailable>
       </div>
 
       <section className="flex flex-col gap-2">

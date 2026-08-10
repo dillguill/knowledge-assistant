@@ -27,9 +27,14 @@ test("sidebar shows the product name and all nav sections", () => {
   }
 });
 
-test("Chat, Wiki, Documents, Skills, and Settings are real destinations; the rest are marked planned", () => {
+// Changed when Analytics became navigable. It was the last nav item carrying
+// a "planned" badge; it now opens a real page whose individual panels are
+// marked unavailable instead. Marking the destination beat marking the nav
+// item, because a section you can open states what is coming and a disabled
+// nav item states nothing.
+test("every nav item is a real destination", () => {
   renderShell(<div />);
-  expect(screen.getAllByText("planned")).toHaveLength(1);
+  expect(screen.queryByText("planned")).not.toBeInTheDocument();
 });
 
 test("renders its children in the main area", () => {
