@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 import respx
@@ -199,3 +201,116 @@ def test_every_error_code_has_user_facing_copy():
         )
     }
     assert codes <= set(search.ERROR_MESSAGES)
+
+
+SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape"
+MAP_URL = "https://api.firecrawl.dev/v2/map"
+
+
+@respx.mock
+async def test_scrape_url_returns_the_page_as_a_web_result():
+    from app.db import store
+    from app.services import search
+
+    respx.post(SCRAPE_URL).respond(
+        json={
+            "success": True,
+            "data": {
+                "markdown": "# Title\n\nBody text.",
+                "metadata": {"title": "Real Title", "description": "A blurb."},
+            },
+        }
+    )
+
+    result = await search.scrape_url("https://a.test/page")
+
+    assert result.url == "https://a.test/page"
+    assert result.title == "Real Title"
+    assert "Body text." in result.content
+    assert result.excerpt == "A blurb."
+    # Cached under the same table the save-to-knowledge flow already reads, so
+    # archiving a scraped page needs no new code path.
+    assert store.find_cached_result("https://a.test/page")["title"] == "Real Title"
+
+
+@respx.mock
+async def test_scrape_url_falls_back_to_the_url_when_metadata_has_no_title():
+    from app.services import search
+
+    respx.post(SCRAPE_URL).respond(
+        json={"success": True, "data": {"markdown": "body", "metadata": {}}}
+    )
+    assert (await search.scrape_url("https://a.test/page")).title == "https://a.test/page"
+
+
+@respx.mock
+async def test_scrape_url_reuses_the_typed_error_ladder():
+    from app.services import search
+
+    respx.post(SCRAPE_URL).respond(status_code=429, headers={"Retry-After": "12"})
+
+    with pytest.raises(search.SearchRateLimitedError) as excinfo:
+        await search.scrape_url("https://a.test/page")
+    assert not isinstance(excinfo.value, search.SearchQuotaError)
+    assert excinfo.value.retry_after == 12
+
+
+async def test_scrape_url_without_a_provider_is_unavailable(monkeypatch):
+    from app.services import search
+
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    get_settings.cache_clear()
+
+    with pytest.raises(search.SearchUnavailableError):
+        await search.scrape_url("https://a.test/page")
+
+
+@respx.mock
+async def test_map_site_returns_links_capped_at_the_configured_limit(monkeypatch):
+    from app.services import search
+
+    monkeypatch.setenv("SITE_MAP_MAX_LINKS", "2")
+    get_settings.cache_clear()
+
+    route = respx.post(MAP_URL).respond(
+        json={
+            "success": True,
+            "links": [
+                {"url": f"https://a.test/{i}", "title": f"P{i}", "description": "d"}
+                for i in range(10)
+            ],
+        }
+    )
+
+    links = await search.map_site("https://a.test", query="pricing")
+
+    assert len(links) == 2
+    assert links[0] == {"url": "https://a.test/0", "title": "P0", "description": "d"}
+    sent = json.loads(route.calls[0].request.content)
+    assert sent["url"] == "https://a.test"
+    assert sent["search"] == "pricing"
+    # A cap is sent upstream too — asking for 5000 links and discarding 4950
+    # locally would spend the allowance for nothing.
+    assert sent["limit"] == 2
+
+
+@respx.mock
+async def test_map_site_omits_the_search_field_when_no_query_is_given():
+    from app.services import search
+
+    route = respx.post(MAP_URL).respond(json={"success": True, "links": []})
+    await search.map_site("https://a.test")
+    assert "search" not in json.loads(route.calls[0].request.content)
+
+
+@respx.mock
+async def test_map_site_skips_malformed_link_entries():
+    from app.services import search
+
+    respx.post(MAP_URL).respond(
+        json={"success": True, "links": [
+            {"url": "https://a.test/1"}, {"title": "no url"}, "not a dict", None,
+        ]}
+    )
+    links = await search.map_site("https://a.test")
+    assert [link["url"] for link in links] == ["https://a.test/1"]
