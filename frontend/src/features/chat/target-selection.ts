@@ -61,11 +61,24 @@ export function onEditTargetRequest(fn: EditTargetListener): () => void {
   };
 }
 
+// `panelOpen` is deliberately separate from `targetPageId`: closing the panel
+// is not the same act as unpinning the page (the Artifacts model — dismissing
+// the view keeps the thing itself). The composer's "Editing:" pill is what
+// reopens it, and its X is what unpins. Both live under this provider, so this
+// is plain context rather than another module-level pub/sub bridge.
 const TargetContext = createContext<{
   targetPageId: number | null;
   setTargetPageId: (id: number | null) => void;
   refreshToken: number;
-}>({ targetPageId: null, setTargetPageId: () => {}, refreshToken: 0 });
+  panelOpen: boolean;
+  setPanelOpen: (open: boolean) => void;
+}>({
+  targetPageId: null,
+  setTargetPageId: () => {},
+  refreshToken: 0,
+  panelOpen: true,
+  setPanelOpen: () => {},
+});
 
 export function useTargetSelection() {
   return useContext(TargetContext);
@@ -78,6 +91,7 @@ export function TargetSelectionProvider({ children }: { children: ReactNode }) {
     return init;
   });
   const [refreshToken, setRefreshToken] = useState(0);
+  const [panelOpen, setPanelOpen] = useState(true);
 
   useEffect(() => {
     refreshListener = () => setRefreshToken((t) => t + 1);
@@ -92,6 +106,9 @@ export function TargetSelectionProvider({ children }: { children: ReactNode }) {
         targetRef.current = id;
         localStorage.setItem(TARGET_STORAGE_KEY, JSON.stringify(id));
         setState(id);
+        // The assistant just created a page and pinned it — showing the panel
+        // is the whole point of that flow.
+        setPanelOpen(true);
       }),
     [],
   );
@@ -101,11 +118,16 @@ export function TargetSelectionProvider({ children }: { children: ReactNode }) {
     if (id === null) localStorage.removeItem(TARGET_STORAGE_KEY);
     else localStorage.setItem(TARGET_STORAGE_KEY, JSON.stringify(id));
     setState(id);
+    // Pinning a page means "show me this page"; unpinning leaves nothing to
+    // show. Either way the panel follows the pin.
+    setPanelOpen(id !== null);
   };
 
   return createElement(
     TargetContext.Provider,
-    { value: { targetPageId, setTargetPageId, refreshToken } },
+    {
+      value: { targetPageId, setTargetPageId, refreshToken, panelOpen, setPanelOpen },
+    },
     children,
   );
 }

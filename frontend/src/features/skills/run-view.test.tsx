@@ -60,6 +60,26 @@ describe("RunView", () => {
     expect(screen.getByText(/42/)).toBeInTheDocument();
   });
 
+  it("names steps in plain language while keeping the recorded id visible", async () => {
+    getRunMock = vi.fn().mockResolvedValue({
+      run,
+      steps: [
+        doneStep,
+        { ...doneStep, ordinal: 2, name: "tool:web_search" },
+        { ...doneStep, ordinal: 3, name: "draft:2" },
+      ],
+    });
+    render(<RunView runId={1} />);
+
+    expect(await screen.findByText("Decided what to look up")).toBeInTheDocument();
+    expect(screen.getByText("Searched the web")).toBeInTheDocument();
+    // The section index distinguishes one draft call from the next, so it
+    // belongs in the readable name.
+    expect(screen.getByText("Drafted section 2")).toBeInTheDocument();
+    // Nothing is hidden: the raw recorded name stays as the mono kind label.
+    expect(screen.getByText("tool · web_search")).toBeInTheDocument();
+  });
+
   it("appends a live step without refetching the run", async () => {
     events = [{ type: "step-start", name: "gather", ordinal: 2 }];
     render(<RunView runId={1} />);
@@ -120,7 +140,9 @@ describe("RunView", () => {
       .fn()
       .mockResolvedValue({ run: { ...run, status: "succeeded" }, steps: [doneStep] });
     render(<RunView runId={1} />);
-    await screen.findByText("plan");
+    // A terminal run collapses its step rail to a summary line, so the step
+    // itself is no longer in the tree — wait on the collapsed label instead.
+    await screen.findByText("1 step");
     expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
   });
 

@@ -14,7 +14,7 @@ const BANNERS: Partial<Record<string, string>> = {
 export function ChatPage() {
   const status = useBackend();
   const banner = BANNERS[status];
-  const { targetPageId } = useTargetSelection();
+  const { targetPageId, panelOpen } = useTargetSelection();
   return (
     <div className="flex h-full flex-col">
       {banner && (
@@ -22,11 +22,13 @@ export function ChatPage() {
           {banner}
         </p>
       )}
-      <div className="flex min-h-0 flex-1">
+      {/* `relative` anchors the target panel's below-md takeover, which
+          covers the thread but leaves the app topbar reachable. */}
+      <div className="relative flex min-h-0 flex-1">
         <div className="min-h-0 min-w-0 flex-1">
           <Thread />
         </div>
-        {targetPageId !== null && <TargetPanel />}
+        {targetPageId !== null && panelOpen && <TargetPanel />}
       </div>
     </div>
   );

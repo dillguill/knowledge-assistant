@@ -1,12 +1,23 @@
+import { Badge } from "@/components/assistant-ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { relativeTime } from "@/lib/time";
 import type { Run } from "./api";
 
-const STATUS_TONE: Record<string, string> = {
-  succeeded: "text-primary",
-  failed: "text-destructive",
-  cancelled: "text-muted-foreground",
-  running: "text-muted-foreground",
-  queued: "text-muted-foreground",
+type Variant = "success" | "destructive" | "warning" | "muted";
+
+const STATUS_VARIANT: Record<string, Variant> = {
+  succeeded: "success",
+  failed: "destructive",
+  running: "warning",
+  queued: "warning",
+  cancelled: "muted",
 };
 
 /** Past runs, newest first. A failed run stays queryable on purpose — history
@@ -20,40 +31,74 @@ export function RunHistory({
 }) {
   if (runs.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        No runs yet. Starting one will show its progress here.
-      </p>
+      <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border px-6 py-8 text-center">
+        <p className="text-heading">No runs yet</p>
+        <p className="max-w-xs text-body text-muted-foreground">
+          Start a skill above and its progress will appear here — including
+          runs that fail.
+        </p>
+      </div>
     );
   }
 
   return (
-    <ul className="flex flex-col gap-1">
-      {runs.map((run) => (
-        <li key={run.id}>
-          <button
-            type="button"
-            onClick={() => onOpen(run.id)}
-            className="flex w-full items-center gap-3 rounded-md border border-border px-3 py-2 text-start hover:bg-accent"
-          >
-            <span className="min-w-0 flex-1 truncate text-sm">
-              {run.skill}
-              {typeof run.input?.topic === "string" && (
-                <span className="text-muted-foreground"> · {run.input.topic}</span>
-              )}
-            </span>
-            <span
-              className={`shrink-0 font-mono text-[11px] ${
-                STATUS_TONE[run.status] ?? "text-muted-foreground"
-              }`}
+    <div className="overflow-hidden rounded-lg border border-border">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-28 ps-3 font-mono text-eyebrow uppercase">
+              Status
+            </TableHead>
+            <TableHead className="font-mono text-eyebrow uppercase">Run</TableHead>
+            <TableHead className="w-28 pe-3 text-right font-mono text-eyebrow uppercase">
+              Started
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {runs.map((run) => (
+            <TableRow
+              key={run.id}
+              // The row is the target, not a link inside it — a bigger hit
+              // area, and it keeps the whole record clickable.
+              onClick={() => onOpen(run.id)}
+              tabIndex={0}
+              role="button"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpen(run.id);
+                }
+              }}
+              className="cursor-pointer focus-visible:bg-accent focus-visible:outline-none"
             >
-              {run.error_code ?? run.status}
-            </span>
-            <span className="shrink-0 text-[11px] text-muted-foreground">
-              {relativeTime(run.created_at)}
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
+              <TableCell className="ps-3">
+                <Badge
+                  size="sm"
+                  variant={STATUS_VARIANT[run.status] ?? "muted"}
+                  className="font-mono text-eyebrow uppercase"
+                >
+                  {run.error_code ?? run.status}
+                </Badge>
+              </TableCell>
+              <TableCell className="max-w-0">
+                <span className="block truncate">
+                  <span className="font-medium">{run.skill}</span>
+                  {typeof run.input?.topic === "string" && (
+                    <span className="text-muted-foreground">
+                      {" · "}
+                      {run.input.topic}
+                    </span>
+                  )}
+                </span>
+              </TableCell>
+              <TableCell className="pe-3 text-right font-mono text-meta tabular-nums text-muted-foreground">
+                {relativeTime(run.created_at)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
