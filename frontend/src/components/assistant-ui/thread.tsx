@@ -431,8 +431,12 @@ const ComposerAction: FC<{ onInsertTrigger: (char: string) => void }> = ({
   onInsertTrigger,
 }) => {
   return (
-    <div className="aui-composer-action-wrapper relative flex items-center justify-between">
-      <div className="flex items-center gap-2">
+    // The left group (attach + model + web search + tools) is ~386px at its
+    // natural size, wider than a 390px phone leaves inside the composer's
+    // padding. Without wrapping, those controls get crushed instead of
+    // reflowing onto a second line.
+    <div className="aui-composer-action-wrapper relative flex flex-wrap items-center justify-between gap-y-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <ComposerAddAttachment />
         <ComposerModelSelect />
         <ComposerWebSearchSelect />

@@ -22,7 +22,11 @@ export function TopbarStatus() {
   return (
     <div className="ml-auto flex items-center gap-2">
       <ThemeToggle />
+      {/* The backend going offline or waking changes what the user can do,
+          so the change is announced rather than only recoloured. */}
       <span
+        role="status"
+        aria-live="polite"
         className={cn(
           "rounded-full border border-border px-2.5 py-0.5 font-mono text-[10px] tracking-wide uppercase",
           STATUS_STYLES[status],
