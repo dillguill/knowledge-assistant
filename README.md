@@ -9,7 +9,7 @@ Portfolio piece demonstrating AI/RAG engineering, full-stack product work, backe
 and evaluation — running on free-tier hosting.
 
 > **Live:** https://dillguill.github.io/knowledge-assistant/
-> **Status:** v0.5.0 shipped (Web Search) — see Issues/Milestones for what's next.
+> **Status:** v0.6.0 (Skills) code-complete — see Issues/Milestones for what's next.
 
 ## Features
 
@@ -29,8 +29,8 @@ and evaluation — running on free-tier hosting.
   rank-fused, reranked) behind a swappable retriever interface, toggleable against today's
   full-context mode. Current retrieval is FTS5 keyword search (live for Wiki) plus
   budget-truncated full-context stuffing — no chunking or embeddings exist yet.
-- **Skills** *(planned, v0.6.0)* — structured research and comparison workflows invocable
-  from chat.
+- **Skills** *(v0.6.0, code-complete)* — structured research and comparison workflows
+  invocable from chat.
 - **Analytics** *(planned, v0.8.0)* — usage dashboard (tokens, requests, latency per model).
 
 ## Architecture
@@ -73,7 +73,7 @@ Semver milestones, each independently demoable; tracked via GitHub Milestones an
 | v0.4.0 | Living docs — aggregation proposals, approval diffs, wiki UI | ✅ Shipped |
 | v0.4.5 | Wiki git + navigation — real git history, hierarchy sidebar, table of contents | ✅ Shipped |
 | v0.5.0 | Web search — free-tier search as a chat source | ✅ Shipped |
-| v0.6.0 | Skills — structured workflows | Planned |
+| v0.6.0 | Skills — structured workflows | Code-complete |
 | v0.7.0 | RAG — hybrid retrieval behind a retriever interface | Planned |
 | v0.8.0 | Analytics + autoretrieval-style eval loop | Planned |
 | v1.0.0 | Showcase release | Planned |
