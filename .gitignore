@@ -7,6 +7,8 @@ __pycache__/
 backend/data/
 CLAUDE.md
 context/
+.claude/
+.specify/
 # Local secrets: OpenRouter/Firecrawl/HF keys and the owner token. The
 # .example templates carry the variable names only and ARE committed.
 .env
