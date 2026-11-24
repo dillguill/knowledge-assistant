@@ -11,8 +11,8 @@ const STATUS_LABELS = {
 
 const STATUS_STYLES = {
   demo: "text-muted-foreground",
-  waking: "text-amber-600 dark:text-amber-400 animate-pulse motion-reduce:animate-none",
-  online: "text-emerald-600 dark:text-emerald-400",
+  waking: "text-warning animate-pulse motion-reduce:animate-none",
+  online: "text-success",
   offline: "text-destructive",
 } as const;
 
@@ -22,7 +22,11 @@ export function TopbarStatus() {
   return (
     <div className="ml-auto flex items-center gap-2">
       <ThemeToggle />
+      {/* The backend going offline or waking changes what the user can do,
+          so the change is announced rather than only recoloured. */}
       <span
+        role="status"
+        aria-live="polite"
         className={cn(
           "rounded-full border border-border px-2.5 py-0.5 font-mono text-[10px] tracking-wide uppercase",
           STATUS_STYLES[status],

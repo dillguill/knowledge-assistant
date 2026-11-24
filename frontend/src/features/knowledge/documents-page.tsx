@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { FileText, FolderOpen, Library, Plus, Upload } from "lucide-react";
+import { FileText, FolderOpen, Gauge, Library, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { PlaceholderLines, Unavailable } from "@/components/ui/unavailable";
 import { cn } from "@/lib/utils";
 import {
   createCollection,
@@ -25,6 +34,26 @@ function fileExt(filename: string): string {
   return parts.length > 1 ? parts.pop()!.toUpperCase() : "FILE";
 }
 
+function Metric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-lg border border-border bg-card px-3 py-2.5">
+      <dt className="font-mono text-eyebrow text-muted-foreground uppercase">
+        {label}
+      </dt>
+      <dd className="text-heading text-xl tabular-nums">{value}</dd>
+      <dd className="text-meta text-muted-foreground">{detail}</dd>
+    </div>
+  );
+}
+
 export function DocumentsPage() {
   const { collections, loading: collectionsLoading, refresh } = useCollections();
   const [selected, setSelected] = useState<Collection | null>(null);
@@ -37,6 +66,10 @@ export function DocumentsPage() {
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const totalFiles = collections.reduce((sum, c) => sum + c.file_count, 0);
+  const emptyCollections = collections.filter((c) => c.file_count === 0).length;
+  const selectedBytes = files.reduce((sum, f) => sum + f.size_bytes, 0);
 
   useEffect(() => {
     syncStatus().then(setSync).catch(() => setSync(""));
@@ -83,29 +116,68 @@ export function DocumentsPage() {
   return (
     <div className="h-full overflow-hidden">
       <div className="mx-auto flex h-full max-w-5xl flex-col gap-4 px-6 py-6">
-        <header className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="flex items-center gap-2 text-lg font-semibold">
-              <Library className="size-5 text-muted-foreground" aria-hidden />
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <h1 className="flex items-center gap-2.5 text-display">
+              <Library className="size-6 text-muted-foreground" aria-hidden />
               Documents
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="max-w-prose text-body text-muted-foreground">
               Uploaded source collections — every answer resolves back to a file
               here.
             </p>
           </div>
           {sync && (
-            <span className="rounded-full border border-border px-2.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+            <span className="rounded-full border border-border px-2.5 py-1 font-mono text-eyebrow text-muted-foreground uppercase">
               sync: {sync}
             </span>
           )}
         </header>
 
         {error && (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-body text-destructive" role="alert">
             {error}
           </p>
         )}
+
+        {/* Summary before detail: the questions you arrive with, answered
+            before a single row. Every figure here is derived from data the
+            API already returns — there is no ingest-status field on a file,
+            so this deliberately makes no claim about indexing. */}
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Metric
+            label="Collections"
+            value={collectionsLoading ? "—" : String(collections.length)}
+            detail={
+              emptyCollections > 0 ? `${emptyCollections} empty` : "all in use"
+            }
+          />
+          <Metric
+            label="Files"
+            value={collectionsLoading ? "—" : String(totalFiles)}
+            detail="across all collections"
+          />
+          <Metric
+            label={selected ? `In ${selected.name}` : "Selected"}
+            value={selected ? formatSize(selectedBytes) : "—"}
+            detail={selected ? `${files.length} files` : "no collection picked"}
+          />
+        </dl>
+
+        {/* The slot for ingest status. Deliberately not a live metric: a file
+            record carries no indexing state today, so any figure here would
+            be invented. Marking the slot means the milestone that adds the
+            field fills it in rather than redesigning this header. */}
+        <Unavailable
+          title="Indexing status"
+          milestone="v0.7.0"
+          note="Which files are chunked and embedded, and which are still pending. Needs an ingest-state field on a document record."
+        >
+          <div className="flex items-center gap-3 p-4 pb-12">
+            <Gauge className="size-4 text-muted-foreground" aria-hidden />
+            <PlaceholderLines rows={2} />
+          </div>
+        </Unavailable>
 
         <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[16rem_1fr]">
           {/* Collections column */}
@@ -142,7 +214,7 @@ export function DocumentsPage() {
                   <Skeleton className="h-14 w-full" />
                 </div>
               ) : collections.length === 0 ? (
-                <p className="px-1 py-6 text-center text-sm text-muted-foreground">
+                <p className="px-1 py-6 text-center text-body text-muted-foreground">
                   No collections yet. Create one to start uploading.
                 </p>
               ) : (
@@ -155,10 +227,10 @@ export function DocumentsPage() {
                           onClick={() => setSelected(c)}
                           aria-current={active ? "true" : undefined}
                           className={cn(
-                            "flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors",
+                            "flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-[color,background-color,border-color,box-shadow] duration-200 ease-emphasis",
                             active
-                              ? "border-primary bg-primary/5"
-                              : "border-border bg-card hover:border-primary/50 hover:bg-accent",
+                              ? "border-primary bg-primary/5 shadow-raised"
+                              : "border-border bg-card hover:border-primary/50 hover:bg-accent hover:shadow-raised",
                           )}
                         >
                           <FolderOpen
@@ -169,10 +241,10 @@ export function DocumentsPage() {
                             aria-hidden
                           />
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium">
+                            <span className="block truncate text-body font-medium">
                               {c.name}
                             </span>
-                            <span className="block text-xs text-muted-foreground">
+                            <span className="block text-meta text-muted-foreground">
                               {c.file_count} {c.file_count === 1 ? "file" : "files"}
                             </span>
                           </span>
@@ -189,16 +261,23 @@ export function DocumentsPage() {
           <section className="min-h-0">
             {!selected ? (
               <Card className="h-full items-center justify-center gap-3 border-dashed p-8 text-center">
-                <FolderOpen className="size-8 text-muted-foreground/50" aria-hidden />
-                <p className="text-sm text-muted-foreground">
-                  Select a collection to view and upload its files.
+                <span className="flex size-12 items-center justify-center rounded-full bg-muted">
+                  <FolderOpen
+                    className="size-6 text-muted-foreground"
+                    aria-hidden
+                  />
+                </span>
+                <p className="text-heading">No collection selected</p>
+                <p className="max-w-xs text-body text-muted-foreground">
+                  Pick one on the left to browse its files, or create a new
+                  collection to start uploading.
                 </p>
               </Card>
             ) : (
-              <Card className="flex h-full min-h-0 flex-col gap-4 p-5">
+              <Card className="flex h-full min-h-0 flex-col gap-4 p-5 shadow-raised">
                 <div className="flex items-baseline justify-between gap-2">
-                  <h2 className="text-base font-semibold">{selected.name}</h2>
-                  <span className="text-xs text-muted-foreground">
+                  <h2 className="text-heading">{selected.name}</h2>
+                  <span className="font-mono text-eyebrow text-muted-foreground uppercase">
                     {selected.file_count}{" "}
                     {selected.file_count === 1 ? "file" : "files"}
                   </span>
@@ -207,7 +286,7 @@ export function DocumentsPage() {
                 <label
                   htmlFor="kb-upload"
                   className={cn(
-                    "flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground transition-colors hover:border-primary hover:bg-accent/40",
+                    "flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-dashed border-border px-4 py-7 text-center text-body text-muted-foreground transition-[color,background-color,border-color] duration-200 ease-emphasis hover:border-primary hover:bg-accent/40",
                     uploading && "pointer-events-none opacity-60",
                   )}
                   onDragOver={(e) => e.preventDefault()}
@@ -222,7 +301,7 @@ export function DocumentsPage() {
                       ? "Uploading…"
                       : "Drop files here or click to browse"}
                   </span>
-                  <span className="text-xs text-muted-foreground/70">
+                  <span className="text-meta text-muted-foreground/70">
                     PDF, HTML, text, markdown
                   </span>
                 </label>
@@ -244,37 +323,61 @@ export function DocumentsPage() {
                       <Skeleton className="h-9 w-full" />
                     </div>
                   ) : files.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-muted-foreground">
+                    <p className="py-6 text-center text-body text-muted-foreground">
                       No files yet — upload some to ground your answers.
                     </p>
                   ) : (
-                    <ul className="divide-y divide-border rounded-lg border border-border">
-                      {files.map((f) => (
-                        <li
-                          key={f.id}
-                          className="flex items-center gap-3 px-3 py-2.5 text-sm"
-                        >
-                          <FileText
-                            className="size-4 shrink-0 text-muted-foreground"
-                            aria-hidden
-                          />
-                          <a
-                            href={rawFileUrl(f.id)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="min-w-0 flex-1 truncate font-medium hover:underline"
-                          >
-                            {f.filename}
-                          </a>
-                          <span className="rounded bg-accent px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                            {fileExt(f.filename)}
-                          </span>
-                          <span className="w-16 shrink-0 text-right font-mono text-xs text-muted-foreground">
-                            {formatSize(f.size_bytes)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    // A real table rather than a list of flex rows: these are
+                    // records with shared columns, and a header row is what
+                    // makes "type" and "size" legible without reading each
+                    // cell's formatting for a clue.
+                    <div className="overflow-hidden rounded-lg border border-border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="hover:bg-transparent">
+                            <TableHead className="ps-3 font-mono text-eyebrow uppercase">
+                              File
+                            </TableHead>
+                            <TableHead className="w-20 font-mono text-eyebrow uppercase">
+                              Type
+                            </TableHead>
+                            <TableHead className="w-24 pe-3 text-right font-mono text-eyebrow uppercase">
+                              Size
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {files.map((f) => (
+                            <TableRow key={f.id}>
+                              <TableCell className="ps-3">
+                                <span className="flex min-w-0 items-center gap-2.5">
+                                  <FileText
+                                    className="size-4 shrink-0 text-muted-foreground"
+                                    aria-hidden
+                                  />
+                                  <a
+                                    href={rawFileUrl(f.id)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="truncate font-medium underline-offset-2 hover:underline"
+                                  >
+                                    {f.filename}
+                                  </a>
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="rounded bg-accent px-1.5 py-0.5 font-mono text-eyebrow text-muted-foreground">
+                                  {fileExt(f.filename)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="pe-3 text-right font-mono text-meta tabular-nums text-muted-foreground">
+                                {formatSize(f.size_bytes)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   )}
                 </div>
               </Card>

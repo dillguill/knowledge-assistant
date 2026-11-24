@@ -13,6 +13,9 @@ type Pill = {
   icon: typeof FileText;
   variant: "source" | "target" | "create";
   onRemove: () => void;
+  /** Present when the pill also reopens a view — the target pill is how a
+   * closed target panel comes back, on every viewport. */
+  onOpen?: () => void;
 };
 
 /**
@@ -25,7 +28,7 @@ export function SourcePills() {
   const { collections } = useCollections();
   const { wikiPageIds, setWikiPageIds, collectionIds, setCollectionIds } =
     useSourceSelection();
-  const { targetPageId, setTargetPageId } = useTargetSelection();
+  const { targetPageId, setTargetPageId, setPanelOpen } = useTargetSelection();
   const { active: creatingPage, setActive: setCreatingPage } = useCreatePageMode();
 
   const pageTitle = useMemo(() => {
@@ -58,6 +61,7 @@ export function SourcePills() {
         icon: PencilLine,
         variant: "target",
         onRemove: () => setTargetPageId(null),
+        onOpen: () => setPanelOpen(true),
       });
     }
     for (const id of wikiPageIds) {
@@ -116,7 +120,17 @@ export function SourcePills() {
             )}
           >
             <Icon className="size-3.5 shrink-0" />
-            <span className="truncate">{pill.label}</span>
+            {pill.onOpen ? (
+              <button
+                type="button"
+                onClick={pill.onOpen}
+                className="truncate underline-offset-2 hover:underline"
+              >
+                {pill.label}
+              </button>
+            ) : (
+              <span className="truncate">{pill.label}</span>
+            )}
             <button
               type="button"
               aria-label={`Remove ${pill.label}`}
